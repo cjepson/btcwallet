@@ -1320,6 +1320,7 @@ var rpcHandlers = map[string]struct {
 }{
 	// Reference implementation wallet methods (implemented)
 	"addmultisigaddress":     {handler: AddMultiSigAddress},
+	"consolidate":            {handler: Consolidate},
 	"createmultisig":         {handler: CreateMultiSig},
 	"dumpprivkey":            {handler: DumpPrivKey},
 	"getaccount":             {handler: GetAccount},
@@ -1629,6 +1630,20 @@ func AddMultiSigAddress(w *wallet.Wallet, chainSvr *chain.Client,
 	}
 
 	return addr.Address().EncodeAddress(), nil
+}
+
+// Consolidate handles a consolidate request by returning attempting to compress
+// as many inputs as given and then returning the txHash and error.
+func Consolidate(w *wallet.Wallet, chainSvr *chain.Client,
+	icmd interface{}) (interface{}, error) {
+	cmd := icmd.(*dcrjson.ConsolidateCmd)
+
+	txHash, err := w.Consolidate(cmd.Inputs)
+	if err != nil {
+		return nil, err
+	}
+
+	return dcrjson.ConsolidateResult{txHash.String()}, nil
 }
 
 // CreateMultiSig handles an createmultisig request by returning a

@@ -121,6 +121,7 @@ type Wallet struct {
 	rescanFinished      chan *RescanFinishedMsg
 
 	// Channel for transaction creation requests.
+	consolidateRequests      chan consolidateRequest
 	createTxRequests         chan createTxRequest
 	createMultisigTxRequests chan createMultisigTxRequest
 
@@ -209,6 +210,7 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		rescanNotifications:      make(chan interface{}),
 		rescanProgress:           make(chan *RescanProgressMsg),
 		rescanFinished:           make(chan *RescanFinishedMsg),
+		consolidateRequests:      make(chan consolidateRequest),
 		createTxRequests:         make(chan createTxRequest),
 		createMultisigTxRequests: make(chan createMultisigTxRequest),
 		createSStxRequests:       make(chan createSStxRequest),
@@ -1157,6 +1159,10 @@ func (w *Wallet) syncWithChain() error {
 }
 
 type (
+	consolidateRequest struct {
+		inputs int
+		resp   chan consolidateResponse
+	}
 	createTxRequest struct {
 		account uint32
 		pairs   map[string]dcrutil.Amount
@@ -1198,6 +1204,10 @@ type (
 		resp       chan purchaseTicketResponse
 	}
 
+	consolidateResponse struct {
+		txHash *chainhash.Hash
+		err    error
+	}
 	createTxResponse struct {
 		tx  *CreatedTx
 		err error
@@ -1241,6 +1251,10 @@ func (w *Wallet) txCreator() {
 out:
 	for {
 		select {
+		case txr := <-w.consolidateRequests:
+			txh, err := w.compressWallet(txr.inputs)
+			txr.resp <- consolidateResponse{txh, err}
+
 		case txr := <-w.createTxRequests:
 			// Initialize the address pool for use.
 			pool := w.internalPool
@@ -1305,6 +1319,19 @@ out:
 		}
 	}
 	w.wg.Done()
+}
+
+// Consolidate consolidates as many UTXOs as are passed in the inputs argument.
+// If that many UTXOs can not be found, it will use the maximum it finds. This
+// will only compress UTXOs in the default account
+func (w *Wallet) Consolidate(inputs int) (*chainhash.Hash, error) {
+	req := consolidateRequest{
+		inputs: inputs,
+		resp:   make(chan consolidateResponse),
+	}
+	w.consolidateRequests <- req
+	resp := <-req.resp
+	return resp.txHash, resp.err
 }
 
 // CreateSimpleTx creates a new signed transaction spending unspent P2PKH
