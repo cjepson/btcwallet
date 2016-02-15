@@ -2415,13 +2415,13 @@ func GetTicketVoteBits(w *wallet.Wallet, chainSvr *chain.Client,
 		return nil, err
 	}
 	if !set {
-		return &dcrjson.GetTicketVotebitsResult{
+		return &dcrjson.GetTicketVoteBitsResult{
 			VoteBits:    w.VoteBits,
 			VoteBitsExt: "",
 		}, nil
 	}
 
-	return &dcrjson.GetTicketVotebitsResult{
+	return &dcrjson.GetTicketVoteBitsResult{
 		VoteBits:    voteBits,
 		VoteBitsExt: "",
 	}, nil
