@@ -146,7 +146,7 @@ func deserializeSStxRecord(serializedSStxRecord []byte) (*sstxRecord, error) {
 	// Read the intended voteBits and extended voteBits length (uint8).
 	record.voteBitsSet = false
 	voteBitsLen := uint8(serializedSStxRecord[0])
-	if voteBitsLen == 0 {
+	if voteBitsLen != 0 {
 		record.voteBitsSet = true
 	}
 	curPos += int8Size
