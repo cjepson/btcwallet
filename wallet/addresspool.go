@@ -174,9 +174,8 @@ func (a *addressPool) initialize(branch uint32, w *Wallet) error {
 		traversed++
 	}
 
-	// DEBUG
-	log.Infof("Last actual index on pool branch %v start: %v",
-		branch, actualLastIndex)
+	log.Debugf("Address pool initialized to last actual index %v on pool "+
+		"branch %v", actualLastIndex, branch)
 
 	a.index = actualLastIndex
 	a.cursor = 0
@@ -224,9 +223,8 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 	a.cursor++
 	a.index++
 
-	// DEBUG
-	log.Infof("Get new address for branch %v returned %s (idx %v)",
-		a.branch, curAddressStr, a.index)
+	log.Debugf("Get new address for branch %v returned %s (idx %v) from "+
+		"the address pool", a.branch, curAddressStr, a.index)
 
 	// Add the address to the notifications watcher.
 	addrs := make([]dcrutil.Address, 1)
@@ -282,10 +280,6 @@ func (a *addressPool) BatchFinish() {
 func (a *addressPool) BatchRollback() {
 	a.index -= uint32(a.cursor)
 	a.cursor = 0
-
-	// DEBUG
-	log.Infof("Batch rollback for branch %v to idx %v",
-		a.branch, a.index)
 }
 
 // CloseAddressPools grabs one last new address for both internal and external
