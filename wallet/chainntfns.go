@@ -45,6 +45,10 @@ func (w *Wallet) handleChainNotifications() {
 		if err != nil && !w.ShuttingDown() {
 			log.Warnf("Unable to synchronize wallet to chain: %v", err)
 		}
+
+		// Spin up the address pools.
+		w.internalPool.initialize(waddrmgr.InternalBranch, w)
+		w.externalPool.initialize(waddrmgr.ExternalBranch, w)
 	}
 
 	for n := range w.chainSvr.Notifications() {

@@ -193,6 +193,11 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		feeIncrement = FeeIncrementTestnet
 	}
 
+	internalPool := new(addressPool)
+	internalPool.started = false
+	externalPool := new(addressPool)
+	externalPool.started = false
+
 	return &Wallet{
 		db:                       *db,
 		Manager:                  mgr,
@@ -215,8 +220,8 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		createSSGenRequests:      make(chan createSSGenRequest),
 		createSSRtxRequests:      make(chan createSSRtxRequest),
 		purchaseTicketRequests:   make(chan purchaseTicketRequest),
-		internalPool:             new(addressPool),
-		externalPool:             new(addressPool),
+		internalPool:             internalPool,
+		externalPool:             externalPool,
 		addressReuse:             addressReuse,
 		ticketAddress:            ticketAddress,
 		TicketMaxPrice:           tmp,
@@ -663,10 +668,6 @@ func (w *Wallet) Start(chainServer *chain.Client) {
 		log.Infof("PLEASE ENSURE YOUR WALLET IS UNLOCKED SO IT MAY " +
 			"VOTE ON BLOCKS AND RECEIVE STAKE REWARDS")
 	}
-
-	// Spin up the address pools.
-	w.internalPool.initialize(waddrmgr.InternalBranch, w)
-	w.externalPool.initialize(waddrmgr.ExternalBranch, w)
 }
 
 // quitChan atomically reads the quit channel.
@@ -980,6 +981,22 @@ func (w *Wallet) rescanActiveAddresses() error {
 				return fmt.Errorf("couldn't sync external addresses in " +
 					"address manager")
 			}
+
+			// Set the next address in the waddrmgr database so that the
+			// address pool can synchronize properly after.
+			addr, err := w.Manager.GetAddress(idx+1,
+				waddrmgr.DefaultAccountNum, i)
+			if err != nil {
+				log.Errorf("Encountered unexpected error when trying to get "+
+					"the next to use address for branch %v, index %v", i,
+					idx+1)
+			}
+			err = w.Manager.StoreNextToUseAddresses(addr, nil)
+			if err != nil {
+				log.Errorf("Failed to store next to use address for external "+
+					"pool in the manager on init sync: %v", err.Error())
+			}
+
 			log.Infof("Successfully synchronized the address manager to "+
 				"external address %v (key index %v)",
 				addr.String(),
@@ -991,6 +1008,22 @@ func (w *Wallet) rescanActiveAddresses() error {
 				return fmt.Errorf("couldn't sync internal addresses in " +
 					"address manager")
 			}
+
+			// Set the next address in the waddrmgr database so that the
+			// address pool can synchronize properly after.
+			addr, err := w.Manager.GetAddress(idx+1,
+				waddrmgr.DefaultAccountNum, i)
+			if err != nil {
+				log.Errorf("Encountered unexpected error when trying to get "+
+					"the next to use address for branch %v, index %v", i,
+					idx+1)
+			}
+			err = w.Manager.StoreNextToUseAddresses(nil, addr)
+			if err != nil {
+				log.Errorf("Failed to store next to use address for internal "+
+					"pool in the manager on init sync: %v", err.Error())
+			}
+
 			log.Infof("Successfully synchronized the address manager to "+
 				"internal address %v (key index %v)",
 				addr.String(),

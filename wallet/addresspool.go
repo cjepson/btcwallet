@@ -18,6 +18,7 @@
 package wallet
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/decred/dcrutil"
@@ -38,6 +39,8 @@ type addressPool struct {
 	addresses []string
 	cursor    int
 	branch    uint32
+	index     uint32
+	started   bool
 	mutex     *sync.Mutex
 	wallet    *Wallet
 }
@@ -52,8 +55,8 @@ func (a *addressPool) initialize(branch uint32, w *Wallet) error {
 
 	var err error
 
-	// Retrieve the last addresses from wallet closing and storing.
-	lastExtAddr, lastIntAddr, err := w.Manager.LastUsedAddresses()
+	// Retrieve the next to use addresses from wallet closing and storing.
+	lastExtAddr, lastIntAddr, err := w.Manager.NextToUseAddresses()
 	if err != nil {
 		return err
 	}
@@ -125,7 +128,9 @@ func (a *addressPool) initialize(branch uint32, w *Wallet) error {
 		traversed++
 	}
 
+	a.index = actualLastIndex
 	a.cursor = 0
+	a.started = true
 
 	return nil
 }
@@ -135,6 +140,10 @@ func (a *addressPool) initialize(branch uint32, w *Wallet) error {
 // address to the toDelete map. If the address pool runs out of addresses, it
 // generates more from the address manager.
 func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
+	if !a.started {
+		return nil, fmt.Errorf("failed to GetNewAddress; pool not started")
+	}
+
 	// Replenish the pool if we're at the last address.
 	if a.cursor == len(a.addresses)-1 || len(a.addresses) == 0 {
 		if a.branch == waddrmgr.InternalBranch {
@@ -169,6 +178,7 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 	curAddressStr := a.addresses[a.cursor]
 	curAddress, _ := dcrutil.DecodeAddress(curAddressStr, a.wallet.chainParams)
 	a.cursor++
+	a.index++
 
 	// Add the address to the notifications watcher.
 	addrs := make([]dcrutil.Address, 1)
@@ -183,10 +193,35 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 // BatchFinish must be run after every successful series of usages of
 // GetNewAddress to purge the addresses from the unused map.
 func (a *addressPool) BatchFinish() {
+	// We used all the addresses, so we need to pull new addresses
+	// on the next call of this function.
 	if a.cursor >= len(a.addresses) {
 		a.addresses = nil
 		a.cursor = 0
 		return
+	}
+
+	// Write the next address to use to the database.
+	addr, err := a.wallet.Manager.GetAddress(a.index+1,
+		waddrmgr.DefaultAccountNum, a.branch)
+	if err != nil {
+		log.Errorf("Encountered unexpected error when trying to get "+
+			"the next to use address for branch %v, index %v", a.branch,
+			a.index+1)
+	}
+	switch a.branch {
+	case waddrmgr.ExternalBranch:
+		err = a.wallet.Manager.StoreNextToUseAddresses(addr, nil)
+		if err != nil {
+			log.Errorf("Failed to store next to use address for external "+
+				"pool in the manager on batch finish: %v", err.Error())
+		}
+	case waddrmgr.InternalBranch:
+		err = a.wallet.Manager.StoreNextToUseAddresses(nil, addr)
+		if err != nil {
+			log.Errorf("Failed to store next to use address for internal "+
+				"pool in the manager on batch finish: %v", err.Error())
+		}
 	}
 
 	a.addresses = a.addresses[a.cursor:len(a.addresses)]
@@ -197,6 +232,7 @@ func (a *addressPool) BatchFinish() {
 // of GetNewAddress to restore the cursor to the original position in
 // the slice, thus marking all addresses unused again.
 func (a *addressPool) BatchRollback() {
+	a.index -= uint32(a.cursor)
 	a.cursor = 0
 }
 
@@ -211,6 +247,9 @@ func (w *Wallet) CloseAddressPools() {
 	if w.externalPool == nil {
 		return
 	}
+	if !w.internalPool.started || !w.externalPool.started {
+		return
+	}
 	if w.internalPool.mutex == nil {
 		return
 	}
@@ -223,22 +262,22 @@ func (w *Wallet) CloseAddressPools() {
 	defer w.internalPool.mutex.Unlock()
 	defer w.externalPool.mutex.Unlock()
 
-	lastExtAddr, err := w.externalPool.GetNewAddress()
+	nextExtAddr, err := w.externalPool.GetNewAddress()
 	if err != nil {
-		log.Errorf("Failed to get last used address for address "+
+		log.Errorf("Failed to get next to use address for address "+
 			"pool external: %v", err.Error())
 		return
 	}
-	lastIntAddr, err := w.internalPool.GetNewAddress()
+	nextIntAddr, err := w.internalPool.GetNewAddress()
 	if err != nil {
-		log.Errorf("Failed to get last used address for address "+
+		log.Errorf("Failed to get next to use address for address "+
 			"pool internal: %v", err.Error())
 		return
 	}
 
-	err = w.Manager.StoreLastUsedAddresses(lastExtAddr, lastIntAddr)
+	err = w.Manager.StoreNextToUseAddresses(nextExtAddr, nextIntAddr)
 	if err != nil {
-		log.Errorf("Failed to store last used addresses for address "+
+		log.Errorf("Failed to store next to use addresses for address "+
 			"pools in the manager: %v", err.Error())
 	}
 	return
