@@ -45,6 +45,13 @@ type addressPool struct {
 	wallet    *Wallet
 }
 
+// NewAddressPool creates a new address pool for the wallet default account.
+func NewAddressPool() *addressPool {
+	return &addressPool{
+		started: false,
+	}
+}
+
 // initialize initializes an address pool for usage by loading the latest
 // unused address from the blockchain itself.
 func (a *addressPool) initialize(branch uint32, w *Wallet) error {

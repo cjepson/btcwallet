@@ -193,10 +193,8 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		feeIncrement = FeeIncrementTestnet
 	}
 
-	internalPool := new(addressPool)
-	internalPool.started = false
-	externalPool := new(addressPool)
-	externalPool.started = false
+	internalPool := NewAddressPool()
+	externalPool := NewAddressPool()
 
 	return &Wallet{
 		db:                       *db,
