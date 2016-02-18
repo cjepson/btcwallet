@@ -2399,8 +2399,8 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 		}
 	}
 	var localTicketsInMempool []*chainhash.Hash
-	for i, ticketHash := range localTickets {
-		if hashInPointerSlice(ticketHash, allMempoolTickets) {
+	for i := range localTickets {
+		if hashInPointerSlice(localTickets[i], allMempoolTickets) {
 			localTicketsInMempool = append(localTicketsInMempool,
 				&localTickets[i])
 		}
@@ -2426,11 +2426,11 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	var maybeImmature []*chainhash.Hash
 	liveTicketNum := 0
 	immatureTicketNum := 0
-	for i, ticketHash := range localTickets {
-		exists, err := chainSvr.ExistsLiveTicket(&ticketHash)
+	for i := range localTickets {
+		exists, err := chainSvr.ExistsLiveTicket(&localTickets[i])
 		if err != nil {
 			log.Warnf("Failed to find assess whether ticket in live bucket "+
-				"when generating stake info (hash %v, err %s)", ticketHash,
+				"when generating stake info (hash %v, err %s)", localTickets[i],
 				err.Error())
 			continue
 		}
@@ -2470,8 +2470,8 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	if err != nil {
 		return nil, err
 	}
-	for _, ticketHash := range localTickets {
-		if hashInPointerSlice(ticketHash, missedOnChain) {
+	for i := range localTickets {
+		if hashInPointerSlice(localTickets[i], missedOnChain) {
 			missedNum++
 		}
 	}
@@ -2480,11 +2480,11 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	// Get all the subsidy for votes cast by this wallet so far
 	// by accessing the votes directly from the daemon blockchain.
 	totalSubsidy := dcrutil.Amount(0)
-	for _, voteHash := range localVotes {
-		tx, err := chainSvr.GetRawTransaction(&voteHash)
+	for i := range localVotes {
+		tx, err := chainSvr.GetRawTransaction(&localVotes[i])
 		if err != nil {
 			log.Tracef("Failed to find vote in blockchain while generating "+
-				"stake info (hash %v, err %s)", voteHash, err.Error())
+				"stake info (hash %v, err %s)", localVotes[i], err.Error())
 			continue
 		}
 
