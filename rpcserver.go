@@ -2399,9 +2399,10 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 		}
 	}
 	var localTicketsInMempool []*chainhash.Hash
-	for _, ticketHash := range localTickets {
+	for i, ticketHash := range localTickets {
 		if hashInPointerSlice(ticketHash, allMempoolTickets) {
-			localTicketsInMempool = append(localTicketsInMempool, &ticketHash)
+			localTicketsInMempool = append(localTicketsInMempool,
+				&localTickets[i])
 		}
 	}
 
