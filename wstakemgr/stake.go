@@ -438,6 +438,51 @@ func (s *StakeStore) DumpSSRtxHashes() ([]chainhash.Hash, error) {
 	return s.dumpSSRtxHashes()
 }
 
+// dumpSSRtxTickets fetches the entire list of tickets spent as revocations
+// byt this wallet.
+func (s *StakeStore) dumpSSRtxTickets() ([]chainhash.Hash, error) {
+	ticketList := make([]chainhash.Hash, 0)
+
+	err := s.namespace.View(func(tx walletdb.Tx) error {
+		var errForEach error
+
+		// Open the revocation records database.
+		bucket := tx.RootBucket().Bucket(ssrtxRecordsBucketName)
+
+		// Store each hash sequentially.
+		errForEach = bucket.ForEach(func(k []byte, v []byte) error {
+			ticket, errDeser := chainhash.NewHash(k)
+			if errDeser != nil {
+				return errDeser
+			}
+
+			ticketList = append(ticketList, *ticket)
+			return nil
+		})
+
+		return errForEach
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ticketList, nil
+}
+
+// DumpSSRtxTickets is the exported version of dumpSSRtxTickets that is safe
+// for concurrent access.
+func (s *StakeStore) DumpSSRtxTickets() ([]chainhash.Hash, error) {
+	if s.isClosed {
+		str := "stake store is closed"
+		return nil, stakeStoreError(ErrStoreClosed, str, nil)
+	}
+
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	return s.dumpSSRtxTickets()
+}
+
 // A function to get a single owned SStx.
 func (s *StakeStore) getSStx(hash *chainhash.Hash) (*sstxRecord, error) {
 	var record *sstxRecord
