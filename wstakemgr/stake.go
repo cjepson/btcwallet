@@ -347,6 +347,92 @@ func (s *StakeStore) DumpSStxHashesForAddress(addr dcrutil.Address) ([]chainhash
 	return s.dumpSStxHashesForAddress(addr)
 }
 
+// dumpSSGenHashes
+func (s *StakeStore) dumpSSGenHashes() ([]chainhash.Hash, error) {
+	voteList := make([]chainhash.Hash, 0)
+
+	err := s.namespace.View(func(tx walletdb.Tx) error {
+		var errForEach error
+
+		// Open the sstx records database.
+		bucket := tx.RootBucket().Bucket(ssgenRecordsBucketName)
+
+		// Store each key sequentially.
+		errForEach = bucket.ForEach(func(k []byte, v []byte) error {
+			rec, errDeser := deserializeSSGenRecord(v)
+			if errDeser != nil {
+				return errDeser
+			}
+
+			voteList = append(voteList, rec.txHash)
+			return nil
+		})
+
+		return errForEach
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return voteList, nil
+}
+
+// DumpSSGenHashes
+func (s *StakeStore) DumpSSGenHashes() ([]chainhash.Hash, error) {
+	if s.isClosed {
+		str := "stake store is closed"
+		return nil, stakeStoreError(ErrStoreClosed, str, nil)
+	}
+
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	return s.dumpSSGenHashes()
+}
+
+// dumpSSRtxHashes
+func (s *StakeStore) dumpSSRtxHashes() ([]chainhash.Hash, error) {
+	revocationList := make([]chainhash.Hash, 0)
+
+	err := s.namespace.View(func(tx walletdb.Tx) error {
+		var errForEach error
+
+		// Open the sstx records database.
+		bucket := tx.RootBucket().Bucket(ssrtxRecordsBucketName)
+
+		// Store each key sequentially.
+		errForEach = bucket.ForEach(func(k []byte, v []byte) error {
+			rec, errDeser := deserializeSSRtxRecord(v)
+			if errDeser != nil {
+				return errDeser
+			}
+
+			revocationList = append(revocationList, rec.txHash)
+			return nil
+		})
+
+		return errForEach
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return revocationList, nil
+}
+
+// DumpSSRtxHashes
+func (s *StakeStore) DumpSSRtxHashes() ([]chainhash.Hash, error) {
+	if s.isClosed {
+		str := "stake store is closed"
+		return nil, stakeStoreError(ErrStoreClosed, str, nil)
+	}
+
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
+	return s.dumpSSRtxHashes()
+}
+
 // A function to get a single owned SStx.
 func (s *StakeStore) getSStx(hash *chainhash.Hash) (*sstxRecord, error) {
 	var record *sstxRecord

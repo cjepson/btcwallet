@@ -2312,6 +2312,35 @@ func GetSeed(w *wallet.Wallet, chainSvr *chain.Client,
 	return seedStr, nil
 }
 
+// GetStakeInfo gets a large amounts of information about the stake environment
+// and a number of statistics about local staking in the wallet. These are
+// better explained one-by-one:
+//
+//	PoolSize         uint32   Number of live tickets in the ticket pool
+//	Difficulty       int64    Current stake difficulty
+//	AllMempoolTix    uint32   Number of tickets currently in the mempool
+//	OwnMempoolTix    uint32   Number of tickets in mempool that are from
+//	                            this wallet
+//	Immature         uint32   Number of tickets from this wallet that are in the
+//                              blockchain but which are not yet mature
+//	Live             uint32   Number of mature, active tickets owned by this
+//                              wallet
+//	ProportionLive   float64  (Live / PoolSize)
+//	Voted            uint32   Number of votes cast by this wallet
+//	TotalSubsidy     int64    Total amount of coins earned by stake mining
+//	Missed           uint32   Number of missed tickets (failing to vote or
+//                              expired)
+//	ProportionMissed float64  (Missed / (Missed + Voted))
+//	Revoked          uint32   Number of missed tickets that were missed and
+//                              then revoked
+//
+// Getting this information is extremely costly as in involves a massive
+// number of chain server calls.
+func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
+	icmd interface{}) (interface{}, error) {
+	return nil, nil
+}
+
 // GetTicketMaxPrice gets the maximum price the user is willing to pay for a
 // ticket.
 func GetTicketMaxPrice(w *wallet.Wallet, chainSvr *chain.Client,
