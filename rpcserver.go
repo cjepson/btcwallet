@@ -1336,6 +1336,7 @@ var rpcHandlers = map[string]struct {
 	"getreceivedbyaddress":   {handler: GetReceivedByAddress},
 	"getmasterpubkey":        {handler: GetMasterPubkey},
 	"getseed":                {handler: GetSeed},
+	"getstakeinfo":           {handler: GetStakeInfo},
 	"getticketmaxprice":      {handler: GetTicketMaxPrice},
 	"gettickets":             {handler: GetTickets},
 	"getticketvotebits":      {handler: GetTicketVoteBits},
@@ -2372,7 +2373,8 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	if err != nil {
 		return nil, err
 	}
-	poolSize := bestBlock.MsgBlock().Header.PoolSize
+	poolSize := bestBlock.MsgBlock().Header.PoolSize +
+		uint32(bestBlock.MsgBlock().Header.FreshStake)
 
 	// Get the current difficulty.
 	stakeDiff := w.GetStakeDifficulty().StakeDifficulty
@@ -2393,7 +2395,7 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 			continue
 		}
 		if is, _ := stake.IsSStx(tx); is {
-			allMempoolTickets = append(allMempoolTickets, tx.Sha())
+			allMempoolTickets = append(allMempoolTickets, txHash)
 		}
 	}
 	var localTicketsInMempool []*chainhash.Hash
@@ -2423,7 +2425,7 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	var maybeImmature []*chainhash.Hash
 	liveTicketNum := 0
 	immatureTicketNum := 0
-	for _, ticketHash := range localTickets {
+	for i, ticketHash := range localTickets {
 		exists, err := chainSvr.ExistsLiveTicket(&ticketHash)
 		if err != nil {
 			log.Warnf("Failed to find assess whether ticket in live bucket "+
@@ -2434,7 +2436,7 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 		if exists {
 			liveTicketNum++
 		} else {
-			maybeImmature = append(maybeImmature, &ticketHash)
+			maybeImmature = append(maybeImmature, &localTickets[i])
 		}
 	}
 	curHeight := int64(bs.Height)
@@ -2447,7 +2449,7 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 
 		txResult, err := chainSvr.GetRawTransactionVerbose(ticketHash)
 		if err != nil {
-			log.Warnf("Failed to find ticket in blockchain while generating "+
+			log.Tracef("Failed to find ticket in blockchain while generating "+
 				"stake info (hash %v, err %s)", ticketHash, err.Error())
 			continue
 		}
@@ -2480,7 +2482,7 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	for _, voteHash := range localVotes {
 		tx, err := chainSvr.GetRawTransaction(&voteHash)
 		if err != nil {
-			log.Warnf("Failed to find vote in blockchain while generating "+
+			log.Tracef("Failed to find vote in blockchain while generating "+
 				"stake info (hash %v, err %s)", voteHash, err.Error())
 			continue
 		}
@@ -2489,16 +2491,23 @@ func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	}
 
 	// Bring it all together.
-	proportionMissed := float64(missedNum) /
-		(float64(poolSize) + float64(missedNum))
+	proportionLive := float64(0.0)
+	if float64(poolSize) > 0.0 {
+		proportionLive = float64(liveTicketNum) / float64(poolSize)
+	}
+	proportionMissed := float64(0.0)
+	if (float64(poolSize) + float64(missedNum)) > 0.0 {
+		proportionMissed = float64(missedNum) /
+			(float64(poolSize) + float64(missedNum))
+	}
 	resp := &dcrjson.GetStakeInfoResult{
 		PoolSize:         poolSize,
-		Difficulty:       stakeDiff,
+		Difficulty:       dcrutil.Amount(stakeDiff).ToCoin(),
 		AllMempoolTix:    uint32(len(allMempoolTickets)),
 		OwnMempoolTix:    uint32(len(localTicketsInMempool)),
 		Immature:         uint32(immatureTicketNum),
 		Live:             uint32(liveTicketNum),
-		ProportionLive:   float64(liveTicketNum) / float64(poolSize),
+		ProportionLive:   proportionLive,
 		Voted:            uint32(len(localVotes)),
 		TotalSubsidy:     totalSubsidy.ToCoin(),
 		Missed:           uint32(missedNum),
