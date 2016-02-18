@@ -2312,6 +2312,18 @@ func GetSeed(w *wallet.Wallet, chainSvr *chain.Client,
 	return seedStr, nil
 }
 
+// hashInPointerSlice returns whether a hash exists in a slice of hash pointers
+// or not.
+func hashInPointerSlice(h chainhash.Hash, list []*chainhash.Hash) bool {
+	for _, hash := range list {
+		if h == *hash {
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetStakeInfo gets a large amounts of information about the stake environment
 // and a number of statistics about local staking in the wallet. These are
 // better explained one-by-one:
@@ -2338,6 +2350,93 @@ func GetSeed(w *wallet.Wallet, chainSvr *chain.Client,
 // number of chain server calls.
 func GetStakeInfo(w *wallet.Wallet, chainSvr *chain.Client,
 	icmd interface{}) (interface{}, error) {
+	// Load all transaction hash data about stake transactions from the
+	// stake manager.
+	localTickets, err := w.StakeMgr.DumpSStxHashes()
+	if err != nil {
+		return nil, err
+	}
+	localVotes, err := w.StakeMgr.DumpSSGenHashes()
+	if err != nil {
+		return nil, err
+	}
+	localRevocations, err := w.StakeMgr.DumpSSRtxHashes()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the poolsize from the current best block.
+	bestHash, err := chainSvr.GetBestBlockHash()
+	if err != nil {
+		return nil, err
+	}
+	bestBlock, err := chainSvr.GetBlock(bestHash)
+	if err != nil {
+		return nil, err
+	}
+	poolSize := bestBlock.MsgBlock().Header.PoolSize
+
+	// Fetch all transactions from the mempool, and store only the
+	// the ticket hashes for transactions that are tickets. Then see
+	// how many of these mempool tickets also belong to the wallet.
+	allMempoolTx, err := chainSvr.GetRawMempool()
+	if err != nil {
+		return nil, err
+	}
+	var allMempoolTickets []*chainhash.Hash
+	for _, txHash := range allMempoolTx {
+		tx, err := chainSvr.GetRawTransaction(txHash)
+		if err != nil {
+			log.Warnf("Failed to find mempool transaction while generating "+
+				"stake info (hash %v, err %s)", tx.Sha(), err.Error())
+			continue
+		}
+		if is, _ := stake.IsSStx(tx); is {
+			allMempoolTickets = append(allMempoolTickets, tx.Sha())
+		}
+	}
+	localTicketsInMempool := 0
+	for _, ticketHash := range localTickets {
+		if hashInPointerSlice(ticketHash, allMempoolTickets) {
+			localTicketsInMempool++
+		}
+	}
+
+	// Access the tickets the wallet owns against the chain server
+	// and see how many exist in the blockchain and how many are
+	// immature. The speed this up a little, cheaper ExistsLiveTicket
+	// calls are first used to determine which tickets are actually
+	// mature. These tickets are cached. Possibly immature tickets
+	// are then determined by checking against this list and
+	// assembling a maybeImmature list. All transactions in the
+	// maybeImmature list are pulled and their height checked.
+	// If they aren't in the blockchain, they are skipped, in they
+	// are in the blockchain and are immature, they are not included
+	// in the immature number of tickets.
+	//
+	// It's not immediately clear why to use this over gettickets.
+	// GetTickets will only return tickets which are directly held
+	// by this wallet's public keys and excludes things like P2SH
+	// scripts that stake pools use. Doing it this way will give
+	// more accurate results.
+	var maybeImmature []*chainhash.Hash
+	liveTicketNum := 0
+	for _, ticketHash := range localTickets {
+		exists, err := chainSvr.ExistsLiveTicket(&ticketHash)
+		if err != nil {
+			log.Warnf("Failed to find assess whether ticket in live bucket "+
+				"when generating stake info (hash %v, err %s)", ticketHash,
+				err.Error())
+			continue
+		}
+		if exists {
+			liveTicketNum++
+		} else {
+			maybeImmature = append(maybeImmature, &ticketHash)
+		}
+	}
+	for _, ticket := range 
+
 	return nil, nil
 }
 
