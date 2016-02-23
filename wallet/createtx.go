@@ -308,8 +308,8 @@ func (w *Wallet) NewChangeAddress(account uint32) (dcrutil.Address, error) {
 // ReusedAddress returns an address that is reused from the external
 // branch of the wallet, to cut down on new address usage for wallets.
 // Should be used judiciously.
-func (w *Wallet) ReusedAddress() (dcrutil.Address, error) {
-	addr, err := w.Manager.GetAddress(0, waddrmgr.DefaultAccountNum,
+func (w *Wallet) ReusedAddress(account uint32) (dcrutil.Address, error) {
+	addr, err := w.Manager.GetAddress(0, account,
 		waddrmgr.ExternalBranch)
 	if err != nil {
 		return nil, err
@@ -326,7 +326,7 @@ func (w *Wallet) ReusedAddress() (dcrutil.Address, error) {
 // address. InsufficientFundsError is returned if there are not enough
 // eligible unspent outputs to create the transaction.
 func (w *Wallet) txToPairs(pairs map[string]dcrutil.Amount, account uint32,
-	minconf int32, addrFunc func() (dcrutil.Address, error)) (*CreatedTx,
+	minconf int32, addrFunc func(uint32) (dcrutil.Address, error)) (*CreatedTx,
 	error) {
 	isReorganizing, _ := w.chainSvr.GetReorganizing()
 	if isReorganizing {
@@ -385,7 +385,7 @@ func (w *Wallet) txToPairs(pairs map[string]dcrutil.Amount, account uint32,
 func (w *Wallet) createTx(eligible []wtxmgr.Credit,
 	outputs map[string]dcrutil.Amount, bs *waddrmgr.BlockStamp,
 	feeIncrement dcrutil.Amount, account uint32,
-	addrFunc func() (dcrutil.Address, error), chainParams *chaincfg.Params,
+	addrFunc func(uint32) (dcrutil.Address, error), chainParams *chaincfg.Params,
 	disallowFree bool) (*CreatedTx, error) {
 
 	msgtx := wire.NewMsgTx()
@@ -454,7 +454,7 @@ func (w *Wallet) createTx(eligible []wtxmgr.Credit,
 		change := totalAdded - minAmount - feeEst
 		if change > 0 {
 			if changeAddr == nil {
-				changeAddr, err = addrFunc()
+				changeAddr, err = addrFunc(account)
 				if err != nil {
 					return nil, err
 				}
@@ -718,7 +718,7 @@ func (w *Wallet) txToMultisig(account uint32, amount dcrutil.Amount,
 			"multisig address after accounting for fees"))
 	}
 	if totalInput > amount+feeEst {
-		changeAddr, err := addrFunc()
+		changeAddr, err := addrFunc(account)
 		if err != nil {
 			return errorOut(err)
 		}
@@ -839,7 +839,7 @@ func (w *Wallet) compressWallet(maxNumIns int) error {
 
 	outputAmt := totalAdded - feeEst
 
-	changeAddr, err := addrFunc()
+	changeAddr, err := addrFunc(account)
 	if err != nil {
 		return err
 	}
@@ -929,7 +929,7 @@ func (w *Wallet) compressEligible(eligible []wtxmgr.Credit) error {
 
 	outputAmt := totalAdded - feeEst
 
-	changeAddr, err := addrFunc()
+	changeAddr, err := addrFunc(waddrmgr.DefaultAccountNum)
 	if err != nil {
 		return err
 	}
@@ -981,7 +981,7 @@ func (w *Wallet) compressEligible(eligible []wtxmgr.Credit) error {
 func (w *Wallet) txToSStx(pair map[string]dcrutil.Amount,
 	inputCredits []wtxmgr.Credit, inputs []dcrjson.SStxInput,
 	payouts []dcrjson.SStxCommitOut, account uint32,
-	addrFunc func() (dcrutil.Address, error), minconf int32) (*CreatedTx,
+	addrFunc func(uint32) (dcrutil.Address, error), minconf int32) (*CreatedTx,
 	error) {
 
 	// Quit if the blockchain is reorganizing.
@@ -1072,7 +1072,7 @@ func (w *Wallet) txToSStx(pair map[string]dcrutil.Amount,
 		var addr dcrutil.Address
 
 		if payouts[i].Addr == "" {
-			addr, err = addrFunc()
+			addr, err = addrFunc(account)
 			if err != nil {
 				return nil, err
 			}
@@ -1113,7 +1113,7 @@ func (w *Wallet) txToSStx(pair map[string]dcrutil.Amount,
 
 		// Add change to txouts.
 		if payouts[i].ChangeAddr == "" {
-			changeAddr, err = addrFunc()
+			changeAddr, err = addrFunc(account)
 			if err != nil {
 				return nil, err
 			}
@@ -1184,8 +1184,11 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 			pool.BatchRollback()
 		}
 	}()
+
+	account := req.account
 	addrFunc := pool.GetNewAddress
 
+	// TODO Reuse addresses other than those in the default account.
 	if w.addressReuse {
 		addrFunc = w.ReusedAddress
 	}
@@ -1194,8 +1197,6 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	if isReorganizing {
 		return "", ErrBlockchainReorganizing
 	}
-
-	account := uint32(waddrmgr.DefaultAccountNum)
 
 	// Ensure the minimum number of required confirmations is positive.
 	if req.minConf < 0 {
@@ -1228,7 +1229,7 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 		if w.ticketAddress != nil {
 			ticketAddr = w.ticketAddress
 		} else {
-			newAddress, err := addrFunc()
+			newAddress, err := addrFunc(account)
 			if err != nil {
 				return nil, err
 			}
@@ -1263,11 +1264,11 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	inputSum := int64(0)
 	outputSum := int64(0)
 	for i, credit := range eligible {
-		newAddress, err := addrFunc()
+		newAddress, err := addrFunc(account)
 		if err != nil {
 			return nil, err
 		}
-		newChangeAddress, err := addrFunc()
+		newChangeAddress, err := addrFunc(account)
 		if err != nil {
 			return nil, err
 		}

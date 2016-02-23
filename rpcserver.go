@@ -3318,6 +3318,11 @@ func PurchaseTicket(w *wallet.Wallet, chainSvr *chain.Client,
 		return nil, ErrNeedPositiveSpendLimit
 	}
 
+	account, err := w.Manager.LookupAccount(cmd.FromAccount)
+	if err != nil {
+		return nil, err
+	}
+
 	// Override the minimum number of required confirmations if specified
 	// and enforce it is positive.
 	minConf := int32(1)
@@ -3338,7 +3343,8 @@ func PurchaseTicket(w *wallet.Wallet, chainSvr *chain.Client,
 		ticketAddr = addr
 	}
 
-	hash, err := w.CreatePurchaseTicket(0, spendLimit, minConf, ticketAddr)
+	hash, err := w.CreatePurchaseTicket(0, spendLimit, minConf, ticketAddr,
+		account)
 	if err != nil {
 		if err == wallet.ErrSStxInputOverflow {
 			hash = ""

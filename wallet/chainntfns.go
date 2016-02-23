@@ -121,7 +121,7 @@ ticketPurchaseLoop:
 		// amount to the ticket price, thus avoiding more costly db
 		// lookups.
 		eligible, err := w.CreatePurchaseTicket(w.BalanceToMaintain, -1,
-			0, nil)
+			0, nil, waddrmgr.DefaultAccountNum)
 		if err != nil {
 			switch {
 			case err == ErrSStxNotEnoughFunds:

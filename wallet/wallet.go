@@ -1226,6 +1226,7 @@ type (
 		spendLimit dcrutil.Amount
 		minConf    int32
 		ticketAddr dcrutil.Address
+		account    uint32
 		resp       chan purchaseTicketResponse
 	}
 
@@ -1433,13 +1434,15 @@ func (w *Wallet) CreateSSRtx(ticketHash chainhash.Hash) (*CreatedTx, error) {
 // CreatePurchaseTicket receives a request from the RPC and ships it to txCreator
 // to purchase a new ticket.
 func (w *Wallet) CreatePurchaseTicket(minBalance, spendLimit dcrutil.Amount,
-	minConf int32, ticketAddr dcrutil.Address) (interface{}, error) {
+	minConf int32, ticketAddr dcrutil.Address, account uint32) (interface{},
+	error) {
 
 	req := purchaseTicketRequest{
 		minBalance: minBalance,
 		spendLimit: spendLimit,
 		minConf:    minConf,
 		ticketAddr: ticketAddr,
+		account:    account,
 		resp:       make(chan purchaseTicketResponse),
 	}
 	w.purchaseTicketRequests <- req

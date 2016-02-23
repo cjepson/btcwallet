@@ -187,7 +187,18 @@ func (a *addressPool) initialize(branch uint32, w *Wallet) error {
 // mutex locked. Each time, it returns a single new address while adding that
 // address to the toDelete map. If the address pool runs out of addresses, it
 // generates more from the address manager.
-func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
+func (a *addressPool) GetNewAddress(account uint32) (dcrutil.Address, error) {
+	// For non-default accounts, just use the address manager
+	// for now.
+	if account != waddrmgr.DefaultAccountNum {
+		switch a.branch {
+		case waddrmgr.InternalBranch:
+			return a.wallet.NewAddress(account)
+		case waddrmgr.ExternalBranch:
+			return a.wallet.NewChangeAddress(account)
+		}
+	}
+
 	if !a.started {
 		return nil, fmt.Errorf("failed to GetNewAddress; pool not started")
 	}
@@ -301,13 +312,13 @@ func (w *Wallet) CloseAddressPools() {
 	defer w.internalPool.mutex.Unlock()
 	defer w.externalPool.mutex.Unlock()
 
-	nextExtAddr, err := w.externalPool.GetNewAddress()
+	nextExtAddr, err := w.externalPool.GetNewAddress(waddrmgr.DefaultAccountNum)
 	if err != nil {
 		log.Errorf("Failed to get next to use address for address "+
 			"pool external: %v", err.Error())
 		return
 	}
-	nextIntAddr, err := w.internalPool.GetNewAddress()
+	nextIntAddr, err := w.internalPool.GetNewAddress(waddrmgr.DefaultAccountNum)
 	if err != nil {
 		log.Errorf("Failed to get next to use address for address "+
 			"pool internal: %v", err.Error())
@@ -327,7 +338,7 @@ func (w *Wallet) CloseAddressPools() {
 func (w *Wallet) GetNewAddressExternal() (dcrutil.Address, error) {
 	w.externalPool.mutex.Lock()
 	defer w.externalPool.mutex.Unlock()
-	return w.externalPool.GetNewAddress()
+	return w.externalPool.GetNewAddress(waddrmgr.DefaultAccountNum)
 }
 
 // GetNewAddressExternal is the exported function that gets a new internal address
@@ -335,5 +346,5 @@ func (w *Wallet) GetNewAddressExternal() (dcrutil.Address, error) {
 func (w *Wallet) GetNewAddressInternal() (dcrutil.Address, error) {
 	w.internalPool.mutex.Lock()
 	defer w.internalPool.mutex.Unlock()
-	return w.internalPool.GetNewAddress()
+	return w.internalPool.GetNewAddress(waddrmgr.DefaultAccountNum)
 }
