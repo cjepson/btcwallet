@@ -722,12 +722,14 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 
 		pkScrLocs := rec.MsgTx.PkScriptLocs()
 		scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
+		scrLen := uint32(len(rec.MsgTx.TxOut[index].PkScript))
 
 		err = it.delete()
 		if err != nil {
 			return err
 		}
-		err = putUnspentCredit(ns, &cred, scrType, uint32(pkScrLocs[index]))
+		err = putUnspentCredit(ns, &cred, scrType, uint32(pkScrLocs[index]),
+			scrLen)
 		if err != nil {
 			return err
 		}
@@ -950,8 +952,14 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		if existsRawUnminedCredit(ns, k) != nil {
 			return false, nil
 		}
+
+		pkScrLocs := rec.MsgTx.PkScriptLocs()
+		scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
+		scrLen := uint32(len(rec.MsgTx.TxOut[index].PkScript))
+
 		v := valueUnminedCredit(dcrutil.Amount(rec.MsgTx.TxOut[index].Value),
-			change, opCode, isCoinbase)
+			change, opCode, isCoinbase, scrType, uint32(pkScrLocs[index]),
+			scrLen)
 		return true, putRawUnminedCredit(ns, k, v)
 	}
 
@@ -979,8 +987,9 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 
 	scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
 	pkScrLocs := rec.MsgTx.PkScriptLocs()
+	scrLen := uint32(len(rec.MsgTx.TxOut[index].PkScript))
 
-	v = valueUnspentCredit(&cred, scrType, uint32(pkScrLocs[index]))
+	v = valueUnspentCredit(&cred, scrType, uint32(pkScrLocs[index]), scrLen)
 	err := putRawCredit(ns, k, v)
 	if err != nil {
 		return false, err
@@ -1406,9 +1415,14 @@ func (s *Store) rollbackTransaction(hash chainhash.Hash, b *blockRecord,
 		opCode := fetchRawCreditTagOpCode(v)
 		isCoinbase := fetchRawCreditIsCoinbase(v)
 
+		pkScrLocs := rec.MsgTx.PkScriptLocs()
+		scrType := determineScriptType(rec.MsgTx.TxOut[i].PkScript)
+		scrLen := uint32(len(rec.MsgTx.TxOut[i].PkScript))
+
 		outPointKey := canonicalOutPoint(&rec.Hash, uint32(i))
 		unminedCredVal := valueUnminedCredit(amt, change, opCode,
-			isCoinbase)
+			isCoinbase, scrType, uint32(pkScrLocs[i]), scrLen)
+
 		err = putRawUnminedCredit(ns, outPointKey, unminedCredVal)
 		if err != nil {
 			return err

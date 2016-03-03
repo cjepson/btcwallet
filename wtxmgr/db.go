@@ -63,7 +63,8 @@ import (
 // should be explained in a comment.
 //
 // TODO Remove all magic numbers and replace them with cursors that are
-//      incremented by constants.
+//      incremented by constants. Comments need to be filled in. Only
+//      about 1/2 of functions are properly commented.
 
 const (
 	// LatestStakeMgrVersion is the most recent tx store version.
@@ -114,6 +115,16 @@ const (
 	// scriptTypeP2SH is the uint8 value representing a
 	// pay-to-script-hash script for a stake transaction.
 	scriptTypeSP2SH
+)
+
+const (
+	// hashOffsetP2PKH is the offset location of a pubkey
+	// hash in an output's pkScript.
+	hashOffsetP2PKH    = 3
+	hashOffsetP2SH     = 2
+	hashOffsetSP2PKH   = 4
+	hashOffsetSP2SH    = 3
+	hashOffsetP2PKHAlt = 3
 )
 
 // Big endian is the preferred byte order, due to cursor scans over integer
@@ -678,6 +689,7 @@ func latestTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash) (k, v []byte) {
 //   [81:86] OPTIONAL scriptPk location in the transaction output (5 bytes)
 //             [81] Script type (P2PKH, P2SH, etc)
 //             [82:86] Byte index (4 bytes, uint32)
+//             [86:90] Length of script (4 bytes, uint32)
 //
 // The optional debits key is only included if the credit is spent by another
 // mined debit.
@@ -687,7 +699,7 @@ const (
 	creditKeySize = 72
 
 	// creditValueSize is the total size of a credit value in bytes.
-	creditValueSize = 86
+	creditValueSize = 90
 )
 
 func keyCredit(txHash *chainhash.Hash, index uint32, block *Block) []byte {
@@ -706,7 +718,8 @@ func condenseOpCode(opCode uint8) byte {
 // valueUnspentCredit creates a new credit value for an unspent credit.  All
 // credits are created unspent, and are only marked spent later, so there is no
 // value function to create either spent or unspent credits.
-func valueUnspentCredit(cred *credit, scrType scriptType, scrLoc uint32) []byte {
+func valueUnspentCredit(cred *credit, scrType scriptType, scrLoc uint32,
+	scrLen uint32) []byte {
 	v := make([]byte, 86)
 	byteOrder.PutUint64(v, uint64(cred.amount))
 	v[8] = condenseOpCode(cred.opCode)
@@ -719,6 +732,7 @@ func valueUnspentCredit(cred *credit, scrType scriptType, scrLoc uint32) []byte 
 
 	v[81] = byte(scrType)
 	byteOrder.PutUint32(v[82:86], scrLoc)
+	byteOrder.PutUint32(v[82:86], scrLen)
 
 	return v
 }
@@ -736,9 +750,9 @@ func putRawCredit(ns walletdb.Bucket, k, v []byte) error {
 // used when the credit is already know to be unspent, or spent by an
 // unconfirmed transaction.
 func putUnspentCredit(ns walletdb.Bucket, cred *credit, scrType scriptType,
-	scrLoc uint32) error {
+	scrLoc uint32, scrLen uint32) error {
 	k := keyCredit(&cred.outPoint.Hash, cred.outPoint.Index, &cred.block)
-	v := valueUnspentCredit(cred, scrType, scrLoc)
+	v := valueUnspentCredit(cred, scrType, scrLoc, scrLen)
 	return putRawCredit(ns, k, v)
 }
 
@@ -830,6 +844,12 @@ func fetchRawCreditScriptType(v []byte) scriptType {
 // credit.
 func fetchRawCreditScriptOffset(v []byte) uint32 {
 	return byteOrder.Uint32(v[82:86])
+}
+
+// fetchRawCreditScriptLength returns the ScriptOffset for the pkScript of this
+// credit.
+func fetchRawCreditScriptLength(v []byte) uint32 {
+	return byteOrder.Uint32(v[86:90])
 }
 
 // spendRawCredit marks the credit with a given key as mined at some particular
@@ -1251,10 +1271,27 @@ func deleteRawUnmined(ns walletdb.Bucket, k []byte) error {
 //                 011: OP_SSRTX
 //                 100: OP_SSTXCHANGE
 //             [6]: Is coinbase
+//   [9] Script type (P2PKH, P2SH, etc)
+//   [10:14] Byte index (4 bytes, uint32)
+//   [14:18] Length of script (4 bytes, uint32)
+//
+const (
+	// unconfCreditKeySize is the total size of an unconfirmed credit
+	// key in bytes.
+	unconfCreditKeySize = 36
+
+	// unconfValueSizeLegacy is the total size of an unconfirmed legacy
+	// credit value in bytes (version 1).
+	unconfValueSizeLegacy = 9
+
+	// unconfValueSize is the total size of an unconfirmed credit
+	// value in bytes (version 2).
+	unconfValueSize = 18
+)
 
 func valueUnminedCredit(amount dcrutil.Amount, change bool, opCode uint8,
-	IsCoinbase bool) []byte {
-	v := make([]byte, 9)
+	IsCoinbase bool, scrType scriptType, scrLoc uint32, scrLen uint32) []byte {
+	v := make([]byte, unconfValueSize)
 	byteOrder.PutUint64(v, uint64(amount))
 	v[8] = condenseOpCode(opCode)
 	if change {
@@ -1276,7 +1313,7 @@ func putRawUnminedCredit(ns walletdb.Bucket, k, v []byte) error {
 }
 
 func fetchRawUnminedCreditIndex(k []byte) (uint32, error) {
-	if len(k) < 36 {
+	if len(k) < unconfCreditKeySize {
 		str := "short unmined credit key"
 		return 0, storeError(ErrData, str, nil)
 	}
@@ -1284,7 +1321,7 @@ func fetchRawUnminedCreditIndex(k []byte) (uint32, error) {
 }
 
 func fetchRawUnminedCreditAmount(v []byte) (dcrutil.Amount, error) {
-	if len(v) < 9 {
+	if len(v) < unconfValueSizeLegacy {
 		str := "short unmined credit value"
 		return 0, storeError(ErrData, str, nil)
 	}
@@ -1292,7 +1329,7 @@ func fetchRawUnminedCreditAmount(v []byte) (dcrutil.Amount, error) {
 }
 
 func fetchRawUnminedCreditAmountChange(v []byte) (dcrutil.Amount, bool, error) {
-	if len(v) < 9 {
+	if len(v) < unconfValueSizeLegacy {
 		str := "short unmined credit value"
 		return 0, false, storeError(ErrData, str, nil)
 	}
@@ -1307,6 +1344,30 @@ func fetchRawUnminedCreditTagOpcode(v []byte) uint8 {
 
 func fetchRawUnminedCreditTagIsCoinbase(v []byte) bool {
 	return v[8]&(1<<5) != 0
+}
+
+func fetchRawUnminedCreditScriptType(v []byte) (scriptType, error) {
+	if len(v) < unconfValueSize {
+		str := "short unmined credit value"
+		return scriptTypeUnspecified, storeError(ErrData, str, nil)
+	}
+	return scriptType(v[9]), nil
+}
+
+func fetchRawUnminedCreditScriptOffset(v []byte) (uint32, error) {
+	if len(v) < unconfValueSize {
+		str := "short unmined credit value"
+		return scriptTypeUnspecified, storeError(ErrData, str, nil)
+	}
+	return byteOrder.Uint32(v[10:14]), nil
+}
+
+func fetchRawUnminedCreditScriptLength(v []byte) (uint32, error) {
+	if len(v) < unconfValueSize {
+		str := "short unmined credit value"
+		return scriptTypeUnspecified, storeError(ErrData, str, nil)
+	}
+	return byteOrder.Uint32(v[14:18]), nil
 }
 
 func existsRawUnminedCredit(ns walletdb.Bucket, k []byte) []byte {
