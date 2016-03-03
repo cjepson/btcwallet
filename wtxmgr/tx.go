@@ -574,6 +574,45 @@ func (s *Store) PruneUnconfirmed(height int32, stakeDiff int64) error {
 	return nil
 }
 
+// determineScriptType returns the database script type for a given pkScript.
+func determineScriptType(script []byte) scriptType {
+	class := txscript.GetScriptClass(txscript.DefaultScriptVersion,
+		script)
+	scrType := scriptType(scriptTypeUnspecified)
+	switch class {
+	case txscript.PubKeyHashTy:
+		scrType = scriptTypeP2PKH
+	case txscript.PubKeyTy:
+		scrType = scriptTypeP2PK
+	case txscript.ScriptHashTy:
+		scrType = scriptTypeP2SH
+	case txscript.PubkeyHashAltTy:
+		scrType = scriptTypeP2PKHAlt
+	case txscript.PubkeyAltTy:
+		scrType = scriptTypeP2PKAlt
+	case txscript.StakeSubmissionTy:
+		fallthrough
+	case txscript.StakeGenTy:
+		fallthrough
+	case txscript.StakeRevocationTy:
+		fallthrough
+	case txscript.StakeSubChangeTy:
+		subClass, err := txscript.GetStakeOutSubclass(script)
+		if err != nil {
+			log.Warnf("failed to get stake pkscript subscript: %v",
+				err.Error())
+		}
+		switch subClass {
+		case txscript.PubKeyHashTy:
+			scrType = scriptTypeSP2PKH
+		case txscript.ScriptHashTy:
+			scrType = scriptTypeSP2SH
+		}
+	}
+
+	return scrType
+}
+
 // moveMinedTx moves a transaction record from the unmined buckets to block
 // buckets.
 func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
@@ -681,11 +720,14 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 		cred.opCode = fetchRawUnminedCreditTagOpcode(it.cv)
 		cred.isCoinbase = fetchRawUnminedCreditTagIsCoinbase(it.cv)
 
+		pkScrLocs := rec.MsgTx.PkScriptLocs()
+		scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
+
 		err = it.delete()
 		if err != nil {
 			return err
 		}
-		err = putUnspentCredit(ns, &cred)
+		err = putUnspentCredit(ns, &cred, scrType, uint32(pkScrLocs[index]))
 		if err != nil {
 			return err
 		}
@@ -934,7 +976,11 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		opCode:     opCode,
 		isCoinbase: isCoinbase,
 	}
-	v = valueUnspentCredit(&cred)
+
+	scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
+	pkScrLocs := rec.MsgTx.PkScriptLocs()
+
+	v = valueUnspentCredit(&cred, scrType, uint32(pkScrLocs[index]))
 	err := putRawCredit(ns, k, v)
 	if err != nil {
 		return false, err

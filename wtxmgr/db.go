@@ -61,6 +61,60 @@ import (
 //
 // Other operations which are specific to the types being operated on
 // should be explained in a comment.
+//
+// TODO Remove all magic numbers and replace them with cursors that are
+//      incremented by constants.
+
+const (
+	// LatestStakeMgrVersion is the most recent tx store version.
+	LatestStakeMgrVersion = 1
+
+	// Size of various types in bytes.
+	boolSize  = 1
+	int8Size  = 1
+	int16Size = 2
+	int32Size = 4
+	int64Size = 8
+	hashSize  = chainhash.HashSize
+)
+
+type scriptType uint8
+
+const (
+	// scriptTypeUnspecified is the uint8 value representing an
+	// unknown or unspecified type of script.
+	scriptTypeUnspecified = iota
+
+	// scriptTypeP2PKH is the uint8 value representing a
+	// pay-to-public-key-hash script for a regular transaction.
+	scriptTypeP2PKH
+
+	// scriptTypeP2PK is the uint8 value representing a
+	// pay-to-public-key script for a regular transaction.
+	scriptTypeP2PK
+
+	// scriptTypeP2PKHAlt is the uint8 value representing a
+	// pay-to-public-key-hash script for a regular transaction
+	// with an alternative ECDSA.
+	scriptTypeP2PKHAlt
+
+	// scriptTypeP2PKAlt is the uint8 value representing a
+	// pay-to-public-key script for a regular transaction with
+	// an alternative ECDSA.
+	scriptTypeP2PKAlt
+
+	// scriptTypeP2SH is the uint8 value representing a
+	// pay-to-script-hash script for a regular transaction.
+	scriptTypeP2SH
+
+	// scriptTypeSP2PKH is the uint8 value representing a
+	// pay-to-public-key-hash script for a stake transaction.
+	scriptTypeSP2PKH
+
+	// scriptTypeP2SH is the uint8 value representing a
+	// pay-to-script-hash script for a stake transaction.
+	scriptTypeSP2SH
+)
 
 // Big endian is the preferred byte order, due to cursor scans over integer
 // keys iterating in order.
@@ -77,7 +131,7 @@ const (
 // bytes.  If this is ever changed (unlikely for bitcoin, possible for alts),
 // offsets have to be rewritten.  Use a compile-time assertion that this
 // assumption holds true.
-var _ [32]byte = chainhash.Hash{}
+var _ [chainhash.HashSize]byte = chainhash.Hash{}
 
 // Bucket names
 var (
@@ -621,12 +675,23 @@ func latestTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash) (k, v []byte) {
 //             [41:45] Spender block height (4 bytes)
 //             [45:77] Spender block hash (32 bytes)
 //             [77:81] Spender transaction input index (4 bytes)
+//   [81:86] OPTIONAL scriptPk location in the transaction output (5 bytes)
+//             [81] Script type (P2PKH, P2SH, etc)
+//             [82:86] Byte index (4 bytes, uint32)
 //
 // The optional debits key is only included if the credit is spent by another
 // mined debit.
 
+const (
+	// creditKeySize is the total size of a credit key in bytes.
+	creditKeySize = 72
+
+	// creditValueSize is the total size of a credit value in bytes.
+	creditValueSize = 86
+)
+
 func keyCredit(txHash *chainhash.Hash, index uint32, block *Block) []byte {
-	k := make([]byte, 72)
+	k := make([]byte, creditKeySize)
 	copy(k, txHash[:])
 	byteOrder.PutUint32(k[32:36], uint32(block.Height))
 	copy(k[36:68], block.Hash[:])
@@ -641,8 +706,8 @@ func condenseOpCode(opCode uint8) byte {
 // valueUnspentCredit creates a new credit value for an unspent credit.  All
 // credits are created unspent, and are only marked spent later, so there is no
 // value function to create either spent or unspent credits.
-func valueUnspentCredit(cred *credit) []byte {
-	v := make([]byte, 9)
+func valueUnspentCredit(cred *credit, scrType scriptType, scrLoc uint32) []byte {
+	v := make([]byte, 86)
 	byteOrder.PutUint64(v, uint64(cred.amount))
 	v[8] = condenseOpCode(cred.opCode)
 	if cred.change {
@@ -651,6 +716,10 @@ func valueUnspentCredit(cred *credit) []byte {
 	if cred.isCoinbase {
 		v[8] |= 1 << 5
 	}
+
+	v[81] = byte(scrType)
+	byteOrder.PutUint32(v[82:86], scrLoc)
+
 	return v
 }
 
@@ -666,9 +735,10 @@ func putRawCredit(ns walletdb.Bucket, k, v []byte) error {
 // putUnspentCredit puts a credit record for an unspent credit.  It may only be
 // used when the credit is already know to be unspent, or spent by an
 // unconfirmed transaction.
-func putUnspentCredit(ns walletdb.Bucket, cred *credit) error {
+func putUnspentCredit(ns walletdb.Bucket, cred *credit, scrType scriptType,
+	scrLoc uint32) error {
 	k := keyCredit(&cred.outPoint.Hash, cred.outPoint.Index, &cred.block)
-	v := valueUnspentCredit(cred)
+	v := valueUnspentCredit(cred, scrType, scrLoc)
 	return putRawCredit(ns, k, v)
 }
 
@@ -739,12 +809,27 @@ func fetchRawCreditUnspentValue(k []byte) ([]byte, error) {
 	return k[32:68], nil
 }
 
+// fetchRawCreditTagOpCode fetches the compressed OP code for a transaction.
 func fetchRawCreditTagOpCode(v []byte) uint8 {
 	return (((v[8] >> 2) & 0x07) + 0xb9)
 }
 
+// fetchRawCreditIsCoinbase returns whether or not the credit is a coinbase
+// output or not.
 func fetchRawCreditIsCoinbase(v []byte) bool {
 	return v[8]&(1<<5) != 0
+}
+
+// fetchRawCreditScriptType returns the scriptType for the pkScript of this
+// credit.
+func fetchRawCreditScriptType(v []byte) scriptType {
+	return scriptType(v[81])
+}
+
+// fetchRawCreditScriptOffset returns the ScriptOffset for the pkScript of this
+// credit.
+func fetchRawCreditScriptOffset(v []byte) uint32 {
+	return byteOrder.Uint32(v[82:86])
 }
 
 // spendRawCredit marks the credit with a given key as mined at some particular
@@ -752,7 +837,7 @@ func fetchRawCreditIsCoinbase(v []byte) bool {
 // amount is returned.
 func spendCredit(ns walletdb.Bucket, k []byte, spender *indexedIncidence) (dcrutil.Amount, error) {
 	v := ns.Bucket(bucketCredits).Get(k)
-	newv := make([]byte, 81)
+	newv := make([]byte, creditValueSize)
 	copy(newv, v)
 	v = newv
 	v[8] |= 1 << 0
