@@ -517,12 +517,24 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 					// unmined transaction before including
 					// the output script.
 					k := canonicalOutPoint(&prevOut.Hash, prevOut.Index)
-					if existsRawUnminedCredit(ns, k) == nil {
+					vUC := existsRawUnminedCredit(ns, k)
+					if vUC == nil {
 						continue
 					}
 
+					// If we encounter an error here, it likely means
+					// we have a legacy outpoint. Ignore the error and
+					// just let the scrPos be 0, which will trigger
+					// whole transaction deserialization to retrieve
+					// the script.
+					var scrLen uint32
+					scrPos, err := fetchRawUnminedCreditScriptOffset(vUC)
+					if err == nil {
+						scrLen, _ = fetchRawUnminedCreditScriptLength(vUC)
+					}
+
 					pkScript, err := fetchRawTxRecordPkScript(
-						prevOut.Hash[:], v, prevOut.Index)
+						prevOut.Hash[:], v, prevOut.Index, scrPos, scrLen)
 					if err != nil {
 						return err
 					}
@@ -532,10 +544,19 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 
 				_, credKey := existsUnspent(ns, prevOut)
 				if credKey != nil {
+					credVal := existsRawCredit(ns, credKey)
+					if credVal == nil {
+						return storeError(ErrDatabase, fmt.Sprintf("credit "+
+							"val for %x missing", credVal),
+							fmt.Errorf("no exists"))
+					}
+					scrPos := fetchRawCreditScriptOffset(credVal)
+					scrLen := fetchRawCreditScriptLength(credVal)
+
 					k := extractRawCreditTxRecordKey(credKey)
 					v = existsRawTxRecord(ns, k)
 					pkScript, err := fetchRawTxRecordPkScript(k, v,
-						prevOut.Index)
+						prevOut.Index, scrPos, scrLen)
 					if err != nil {
 						return err
 					}
@@ -550,9 +571,20 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 		for it.next() {
 			credKey := extractRawDebitCreditKey(it.cv)
 			index := extractRawCreditIndex(credKey)
+
+			credVal := existsRawCredit(ns, credKey)
+			if credVal == nil {
+				return storeError(ErrDatabase, fmt.Sprintf("credit "+
+					"val for %x missing in debit itr", credVal),
+					fmt.Errorf("no exists"))
+			}
+			scrPos := fetchRawCreditScriptOffset(credVal)
+			scrLen := fetchRawCreditScriptLength(credVal)
+
 			k := extractRawCreditTxRecordKey(credKey)
 			v := existsRawTxRecord(ns, k)
-			pkScript, err := fetchRawTxRecordPkScript(k, v, index)
+			pkScript, err := fetchRawTxRecordPkScript(k, v, index,
+				scrPos, scrLen)
 			if err != nil {
 				return err
 			}

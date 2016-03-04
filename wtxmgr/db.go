@@ -118,6 +118,9 @@ const (
 )
 
 const (
+	//
+	scriptLocNotStored = 0
+
 	// hashOffsetP2PKH is the offset location of a pubkey
 	// hash in an output's pkScript.
 	hashOffsetP2PKH    = 3
@@ -612,20 +615,37 @@ func fetchTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash, block *Block) (*T
 	return rec, err
 }
 
-// TODO: This reads more than necessary.  Pass the pkscript location instead to
-// avoid the wire.MsgTx deserialization.
-func fetchRawTxRecordPkScript(k, v []byte, index uint32) ([]byte, error) {
-	var rec TxRecord
-	copy(rec.Hash[:], k) // Silly but need an array
-	err := readRawTxRecord(&rec.Hash, v, &rec)
-	if err != nil {
-		return nil, err
+func fetchRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
+	scrLen uint32) ([]byte, error) {
+	var pkScript []byte
+
+	// The script isn't stored (legacy credits). Deserialize the
+	// entire transaction.
+	if scrLoc == scriptLocNotStored {
+		fmt.Printf("deserialize whole tx branch\n")
+		var rec TxRecord
+		copy(rec.Hash[:], k) // Silly but need an array
+		err := readRawTxRecord(&rec.Hash, v, &rec)
+		if err != nil {
+			return nil, err
+		}
+		if int(index) >= len(rec.MsgTx.TxOut) {
+			str := "missing transaction output for credit index"
+			return nil, storeError(ErrData, str, nil)
+		}
+		pkScript = rec.MsgTx.TxOut[index].PkScript
+	} else {
+		// We have the location and script length stored. Just
+		// copy the script. Offset the script location for the
+		// timestamp that prefixes it.
+		fmt.Printf("copy script branch\n")
+		scrLocInt := int(scrLoc) + int64Size
+		scrLenInt := int(scrLen)
+		pkScript = make([]byte, scrLenInt)
+		copy(pkScript, v[scrLocInt:scrLocInt+scrLenInt])
 	}
-	if int(index) >= len(rec.MsgTx.TxOut) {
-		str := "missing transaction output for credit index"
-		return nil, storeError(ErrData, str, nil)
-	}
-	return rec.MsgTx.TxOut[index].PkScript, nil
+
+	return pkScript, nil
 }
 
 func existsTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash, block *Block) (k, v []byte) {
