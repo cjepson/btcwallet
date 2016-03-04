@@ -574,45 +574,6 @@ func (s *Store) PruneUnconfirmed(height int32, stakeDiff int64) error {
 	return nil
 }
 
-// determineScriptType returns the database script type for a given pkScript.
-func determineScriptType(script []byte) scriptType {
-	class := txscript.GetScriptClass(txscript.DefaultScriptVersion,
-		script)
-	scrType := scriptType(scriptTypeUnspecified)
-	switch class {
-	case txscript.PubKeyHashTy:
-		scrType = scriptTypeP2PKH
-	case txscript.PubKeyTy:
-		scrType = scriptTypeP2PK
-	case txscript.ScriptHashTy:
-		scrType = scriptTypeP2SH
-	case txscript.PubkeyHashAltTy:
-		scrType = scriptTypeP2PKHAlt
-	case txscript.PubkeyAltTy:
-		scrType = scriptTypeP2PKAlt
-	case txscript.StakeSubmissionTy:
-		fallthrough
-	case txscript.StakeGenTy:
-		fallthrough
-	case txscript.StakeRevocationTy:
-		fallthrough
-	case txscript.StakeSubChangeTy:
-		subClass, err := txscript.GetStakeOutSubclass(script)
-		if err != nil {
-			log.Warnf("failed to get stake pkscript subscript: %v",
-				err.Error())
-		}
-		switch subClass {
-		case txscript.PubKeyHashTy:
-			scrType = scriptTypeSP2PKH
-		case txscript.ScriptHashTy:
-			scrType = scriptTypeSP2SH
-		}
-	}
-
-	return scrType
-}
-
 // moveMinedTx moves a transaction record from the unmined buckets to block
 // buckets.
 func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
@@ -720,16 +681,11 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 		cred.opCode = fetchRawUnminedCreditTagOpcode(it.cv)
 		cred.isCoinbase = fetchRawUnminedCreditTagIsCoinbase(it.cv)
 
-		pkScrLocs := rec.MsgTx.PkScriptLocs()
-		scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
-		scrLen := uint32(len(rec.MsgTx.TxOut[index].PkScript))
-
 		err = it.delete()
 		if err != nil {
 			return err
 		}
-		err = putUnspentCredit(ns, &cred, scrType, uint32(pkScrLocs[index]),
-			scrLen)
+		err = putUnspentCredit(ns, &cred)
 		if err != nil {
 			return err
 		}
@@ -952,14 +908,8 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		if existsRawUnminedCredit(ns, k) != nil {
 			return false, nil
 		}
-
-		pkScrLocs := rec.MsgTx.PkScriptLocs()
-		scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
-		scrLen := uint32(len(rec.MsgTx.TxOut[index].PkScript))
-
 		v := valueUnminedCredit(dcrutil.Amount(rec.MsgTx.TxOut[index].Value),
-			change, opCode, isCoinbase, scrType, uint32(pkScrLocs[index]),
-			scrLen)
+			change, opCode, isCoinbase)
 		return true, putRawUnminedCredit(ns, k, v)
 	}
 
@@ -984,12 +934,7 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		opCode:     opCode,
 		isCoinbase: isCoinbase,
 	}
-
-	scrType := determineScriptType(rec.MsgTx.TxOut[index].PkScript)
-	pkScrLocs := rec.MsgTx.PkScriptLocs()
-	scrLen := uint32(len(rec.MsgTx.TxOut[index].PkScript))
-
-	v = valueUnspentCredit(&cred, scrType, uint32(pkScrLocs[index]), scrLen)
+	v = valueUnspentCredit(&cred)
 	err := putRawCredit(ns, k, v)
 	if err != nil {
 		return false, err
@@ -1415,14 +1360,9 @@ func (s *Store) rollbackTransaction(hash chainhash.Hash, b *blockRecord,
 		opCode := fetchRawCreditTagOpCode(v)
 		isCoinbase := fetchRawCreditIsCoinbase(v)
 
-		pkScrLocs := rec.MsgTx.PkScriptLocs()
-		scrType := determineScriptType(rec.MsgTx.TxOut[i].PkScript)
-		scrLen := uint32(len(rec.MsgTx.TxOut[i].PkScript))
-
 		outPointKey := canonicalOutPoint(&rec.Hash, uint32(i))
 		unminedCredVal := valueUnminedCredit(amt, change, opCode,
-			isCoinbase, scrType, uint32(pkScrLocs[i]), scrLen)
-
+			isCoinbase)
 		err = putRawUnminedCredit(ns, outPointKey, unminedCredVal)
 		if err != nil {
 			return err
@@ -2230,6 +2170,8 @@ type minimalCredit struct {
 	tree        int8
 	unmined     bool
 }
+
+type fetchPkScript
 
 // ByUtxoAmount defines the methods needed to satisify sort.Interface to
 // sort a slice of Utxos by their amount.
