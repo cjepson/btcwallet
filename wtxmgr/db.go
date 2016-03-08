@@ -615,7 +615,7 @@ func fetchTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash, block *Block) (*T
 	return rec, err
 }
 
-func fetchRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
+func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 	scrLen uint32) ([]byte, error) {
 	var pkScript []byte
 

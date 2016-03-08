@@ -533,7 +533,7 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 						scrLen, _ = fetchRawUnminedCreditScriptLength(vUC)
 					}
 
-					pkScript, err := fetchRawTxRecordPkScript(
+					pkScript, err := extractRawTxRecordPkScript(
 						prevOut.Hash[:], v, prevOut.Index, scrPos, scrLen)
 					if err != nil {
 						return err
@@ -555,7 +555,7 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 
 					k := extractRawCreditTxRecordKey(credKey)
 					v = existsRawTxRecord(ns, k)
-					pkScript, err := fetchRawTxRecordPkScript(k, v,
+					pkScript, err := extractRawTxRecordPkScript(k, v,
 						prevOut.Index, scrPos, scrLen)
 					if err != nil {
 						return err
@@ -583,7 +583,7 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 
 			k := extractRawCreditTxRecordKey(credKey)
 			v := existsRawTxRecord(ns, k)
-			pkScript, err := fetchRawTxRecordPkScript(k, v, index,
+			pkScript, err := extractRawTxRecordPkScript(k, v, index,
 				scrPos, scrLen)
 			if err != nil {
 				return err

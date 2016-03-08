@@ -681,11 +681,21 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 		cred.opCode = fetchRawUnminedCreditTagOpcode(it.cv)
 		cred.isCoinbase = fetchRawUnminedCreditTagIsCoinbase(it.cv)
 
+		scrType := fetchRawCreditScriptType(it.cv)
+		scrPos, err := fetchRawUnminedCreditScriptOffset(it.cv)
+		if err != nil {
+			return err
+		}
+		scrLen, err := fetchRawUnminedCreditScriptLength(it.cv)
+		if err != nil {
+			return err
+		}
+
 		err = it.delete()
 		if err != nil {
 			return err
 		}
-		err = putUnspentCredit(ns, &cred)
+		err = putUnspentCredit(ns, &cred, scrType, scrPos, scrLen)
 		if err != nil {
 			return err
 		}
@@ -898,6 +908,44 @@ func getP2PKHOpCode(pkScript []byte) uint8 {
 	return OP_NONSTAKE
 }
 
+// pkScriptType determines the general type of pkScript for the purposes of
+// fast extraction of pkScript data from a raw transaction record.
+func pkScriptType(pkScript []byte) (scriptType, error) {
+	var scrType scriptType
+	class := txscript.GetScriptClass(txscript.DefaultScriptVersion, pkScript)
+	switch class {
+	case txscript.PubKeyHashTy:
+		scrType = scriptTypeP2PKH
+	case txscript.PubKeyTy:
+		scrType = scriptTypeP2PK
+	case txscript.ScriptHashTy:
+		scrType = scriptTypeP2SH
+	case txscript.PubkeyHashAltTy:
+		scrType = scriptTypeP2PKHAlt
+	case txscript.PubkeyAltTy:
+		scrType = scriptTypeP2PKAlt
+	case txscript.StakeSubmissionTy:
+		fallthrough
+	case txscript.StakeGenTy:
+		fallthrough
+	case txscript.StakeRevocationTy:
+		fallthrough
+	case txscript.StakeSubChangeTy:
+		subClass, err := txscript.GetStakeOutSubclass(pkScript)
+		if err != nil {
+			return 0, err
+		}
+		switch subClass {
+		case txscript.PubKeyHashTy:
+			scrType = scriptTypeSP2PKH
+		case txscript.ScriptHashTy:
+			scrType = scriptTypeSP2SH
+		}
+	}
+
+	return scrType, nil
+}
+
 func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 	index uint32, change bool) (bool, error) {
 	opCode := getP2PKHOpCode(rec.MsgTx.TxOut[index].PkScript)
@@ -908,8 +956,16 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		if existsRawUnminedCredit(ns, k) != nil {
 			return false, nil
 		}
+		scrType, err := pkScriptType(rec.MsgTx.TxOut[index].PkScript)
+		if err != nil {
+			return false, err
+		}
+		scrLoc := rec.MsgTx.PkScriptLocs()[index]
+		scrLen := len(rec.MsgTx.TxOut[index].PkScript)
+
 		v := valueUnminedCredit(dcrutil.Amount(rec.MsgTx.TxOut[index].Value),
-			change, opCode, isCoinbase)
+			change, opCode, isCoinbase, scrType, uint32(scrLoc),
+			uint32(scrLen))
 		return true, putRawUnminedCredit(ns, k, v)
 	}
 
@@ -934,8 +990,14 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		opCode:     opCode,
 		isCoinbase: isCoinbase,
 	}
-	v = valueUnspentCredit(&cred)
-	err := putRawCredit(ns, k, v)
+	scrType, err := pkScriptType(rec.MsgTx.TxOut[index].PkScript)
+	if err != nil {
+		return false, err
+	}
+	scrLoc := rec.MsgTx.PkScriptLocs()[index]
+	scrLen := len(rec.MsgTx.TxOut[index].PkScript)
+	v = valueUnspentCredit(&cred, scrType, uint32(scrLoc), uint32(scrLen))
+	err = putRawCredit(ns, k, v)
 	if err != nil {
 		return false, err
 	}
@@ -1360,9 +1422,16 @@ func (s *Store) rollbackTransaction(hash chainhash.Hash, b *blockRecord,
 		opCode := fetchRawCreditTagOpCode(v)
 		isCoinbase := fetchRawCreditIsCoinbase(v)
 
+		scrType, err := pkScriptType(output.PkScript)
+		if err != nil {
+			return err
+		}
+		scrLoc := rec.MsgTx.PkScriptLocs()[i]
+		scrLen := len(rec.MsgTx.TxOut[i].PkScript)
+
 		outPointKey := canonicalOutPoint(&rec.Hash, uint32(i))
 		unminedCredVal := valueUnminedCredit(amt, change, opCode,
-			isCoinbase)
+			isCoinbase, scrType, uint32(scrLoc), uint32(scrLen))
 		err = putRawUnminedCredit(ns, outPointKey, unminedCredVal)
 		if err != nil {
 			return err
@@ -2170,8 +2239,6 @@ type minimalCredit struct {
 	tree        int8
 	unmined     bool
 }
-
-type fetchPkScript
 
 // ByUtxoAmount defines the methods needed to satisify sort.Interface to
 // sort a slice of Utxos by their amount.
