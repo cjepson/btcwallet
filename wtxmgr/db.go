@@ -82,9 +82,9 @@ const (
 type scriptType uint8
 
 const (
-	// scriptTypeUnspecified is the uint8 value representing an
-	// unknown or unspecified type of script.
-	scriptTypeUnspecified = iota
+	// scriptTypeNonexisting is the uint8 value representing an
+	// unset script type.
+	scriptTypeNonexisting = iota
 
 	// scriptTypeP2PKH is the uint8 value representing a
 	// pay-to-public-key-hash script for a regular transaction.
@@ -115,10 +115,16 @@ const (
 	// scriptTypeP2SH is the uint8 value representing a
 	// pay-to-script-hash script for a stake transaction.
 	scriptTypeSP2SH
+
+	// scriptTypeUnspecified is the uint8 value representing an
+	// unknown or unspecified type of script.
+	scriptTypeUnspecified
 )
 
 const (
-	//
+	// scriptLocNotStored is the offset value indicating that
+	// the output was stored as a legacy credit and that the
+	// script location was not stored.
 	scriptLocNotStored = 0
 
 	// hashOffsetP2PKH is the offset location of a pubkey
@@ -606,15 +612,6 @@ func readRawTxRecordBlock(k []byte, block *Block) error {
 	return nil
 }
 
-func fetchTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash, block *Block) (*TxRecord, error) {
-	k := keyTxRecord(txHash, block)
-	v := ns.Bucket(bucketTxRecords).Get(k)
-
-	rec := new(TxRecord)
-	err := readRawTxRecord(txHash, v, rec)
-	return rec, err
-}
-
 func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 	scrLen uint32) ([]byte, error) {
 	var pkScript []byte
@@ -622,6 +619,7 @@ func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 	// The script isn't stored (legacy credits). Deserialize the
 	// entire transaction.
 	if scrLoc == scriptLocNotStored {
+		// DEBUG
 		fmt.Printf("deserialize whole tx branch\n")
 		var rec TxRecord
 		copy(rec.Hash[:], k) // Silly but need an array
@@ -638,6 +636,8 @@ func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 		// We have the location and script length stored. Just
 		// copy the script. Offset the script location for the
 		// timestamp that prefixes it.
+
+		// DEBUG
 		fmt.Printf("copy script branch\n")
 		scrLocInt := int(scrLoc) + int64Size
 		scrLenInt := int(scrLen)
@@ -646,6 +646,19 @@ func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 	}
 
 	return pkScript, nil
+}
+
+func extractRawTxRecordReceived(v []byte) time.Time {
+	return time.Unix(int64(byteOrder.Uint64(v)), 0)
+}
+
+func fetchTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash, block *Block) (*TxRecord, error) {
+	k := keyTxRecord(txHash, block)
+	v := ns.Bucket(bucketTxRecords).Get(k)
+
+	rec := new(TxRecord)
+	err := readRawTxRecord(txHash, v, rec)
+	return rec, err
 }
 
 func existsTxRecord(ns walletdb.Bucket, txHash *chainhash.Hash, block *Block) (k, v []byte) {
@@ -856,20 +869,32 @@ func fetchRawCreditIsCoinbase(v []byte) bool {
 
 // fetchRawCreditScriptType returns the scriptType for the pkScript of this
 // credit.
-func fetchRawCreditScriptType(v []byte) scriptType {
-	return scriptType(v[81])
+func fetchRawCreditScriptType(v []byte) (scriptType, error) {
+	if len(v) < creditValueSize {
+		str := "short credit value"
+		return scriptTypeNonexisting, storeError(ErrData, str, nil)
+	}
+	return scriptType(v[81]), nil
 }
 
 // fetchRawCreditScriptOffset returns the ScriptOffset for the pkScript of this
 // credit.
-func fetchRawCreditScriptOffset(v []byte) uint32 {
-	return byteOrder.Uint32(v[82:86])
+func fetchRawCreditScriptOffset(v []byte) (uint32, error) {
+	if len(v) < creditValueSize {
+		str := "short credit value"
+		return scriptLocNotStored, storeError(ErrData, str, nil)
+	}
+	return byteOrder.Uint32(v[82:86]), nil
 }
 
 // fetchRawCreditScriptLength returns the ScriptOffset for the pkScript of this
 // credit.
-func fetchRawCreditScriptLength(v []byte) uint32 {
-	return byteOrder.Uint32(v[86:90])
+func fetchRawCreditScriptLength(v []byte) (uint32, error) {
+	if len(v) < creditValueSize {
+		str := "short credit value"
+		return 0, storeError(ErrData, str, nil)
+	}
+	return byteOrder.Uint32(v[86:90]), nil
 }
 
 // spendRawCredit marks the credit with a given key as mined at some particular
@@ -1369,7 +1394,7 @@ func fetchRawUnminedCreditTagIsCoinbase(v []byte) bool {
 func fetchRawUnminedCreditScriptType(v []byte) (scriptType, error) {
 	if len(v) < unconfValueSize {
 		str := "short unmined credit value"
-		return scriptTypeUnspecified, storeError(ErrData, str, nil)
+		return scriptTypeNonexisting, storeError(ErrData, str, nil)
 	}
 	return scriptType(v[9]), nil
 }
@@ -1377,7 +1402,7 @@ func fetchRawUnminedCreditScriptType(v []byte) (scriptType, error) {
 func fetchRawUnminedCreditScriptOffset(v []byte) (uint32, error) {
 	if len(v) < unconfValueSize {
 		str := "short unmined credit value"
-		return scriptTypeUnspecified, storeError(ErrData, str, nil)
+		return scriptLocNotStored, storeError(ErrData, str, nil)
 	}
 	return byteOrder.Uint32(v[10:14]), nil
 }
@@ -1385,7 +1410,7 @@ func fetchRawUnminedCreditScriptOffset(v []byte) (uint32, error) {
 func fetchRawUnminedCreditScriptLength(v []byte) (uint32, error) {
 	if len(v) < unconfValueSize {
 		str := "short unmined credit value"
-		return scriptTypeUnspecified, storeError(ErrData, str, nil)
+		return 0, storeError(ErrData, str, nil)
 	}
 	return byteOrder.Uint32(v[14:18]), nil
 }

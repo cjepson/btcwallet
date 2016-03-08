@@ -681,15 +681,11 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 		cred.opCode = fetchRawUnminedCreditTagOpcode(it.cv)
 		cred.isCoinbase = fetchRawUnminedCreditTagIsCoinbase(it.cv)
 
-		scrType := fetchRawCreditScriptType(it.cv)
-		scrPos, err := fetchRawUnminedCreditScriptOffset(it.cv)
-		if err != nil {
-			return err
-		}
-		scrLen, err := fetchRawUnminedCreditScriptLength(it.cv)
-		if err != nil {
-			return err
-		}
+		// Legacy credit output values may be of the wrong
+		// size.
+		scrType, _ := fetchRawCreditScriptType(it.cv)
+		scrPos, _ := fetchRawUnminedCreditScriptOffset(it.cv)
+		scrLen, _ := fetchRawUnminedCreditScriptLength(it.cv)
 
 		err = it.delete()
 		if err != nil {
@@ -1611,6 +1607,116 @@ func (s *Store) UnspentOutputs() ([]*Credit, error) {
 	return credits, err
 }
 
+// getOutputCreditInfo fetches information about a credit from the database,
+// fills out a credit struct, and returns it.
+func (s *Store) getOutputCreditInfo(ns walletdb.Bucket, op wire.OutPoint,
+	block *Block) (*Credit, error) {
+	// It has to exists as a credit or an unmined credit.
+	// Look both of these up. If it doesn't, throw an
+	// error. Check unmined first, then mined.
+	var minedCredV []byte
+	unminedCredV := existsRawUnminedCredit(ns,
+		canonicalOutPoint(&op.Hash, op.Index))
+	if unminedCredV == nil {
+		if block != nil {
+			credK := keyCredit(&op.Hash, op.Index, block)
+			minedCredV = existsRawCredit(ns, credK)
+		}
+	}
+	if minedCredV == nil && unminedCredV == nil {
+		errStr := fmt.Errorf("missing utxo %x, %v", op.Hash, op.Index)
+		return nil, storeError(ErrNoExists, "couldn't find relevant credit "+
+			"for unspent output", errStr)
+	}
+
+	// Throw an inconsistency error if we find one.
+	if minedCredV != nil && unminedCredV != nil {
+		errStr := fmt.Errorf("duplicated utxo %x, %v", op.Hash, op.Index)
+		return nil, storeError(ErrNoExists, "credit exists in mined and unmined "+
+			"utxo set in duplicate", errStr)
+	}
+
+	var err error
+	var amt dcrutil.Amount
+	var opCode uint8
+	var isCoinbase bool
+	var scrLoc, scrLen uint32
+
+	mined := false
+	if unminedCredV != nil {
+		amt, err = fetchRawUnminedCreditAmount(unminedCredV)
+		if err != nil {
+			return nil, err
+		}
+
+		opCode = fetchRawUnminedCreditTagOpcode(unminedCredV)
+		isCoinbase = fetchRawCreditIsCoinbase(unminedCredV)
+
+		// These errors are skipped because they may throw incorrectly
+		// on values recorded in older versions of the wallet. 0-offset
+		// script locs will cause raw extraction from the deserialized
+		// transactions. See extractRawTxRecordPkScript.
+		scrLoc, _ = fetchRawUnminedCreditScriptOffset(unminedCredV)
+		scrLen, _ = fetchRawUnminedCreditScriptLength(unminedCredV)
+	}
+	if minedCredV != nil {
+		mined = true
+		amt, err = fetchRawCreditAmount(minedCredV)
+		if err != nil {
+			return nil, err
+		}
+
+		opCode = fetchRawCreditTagOpCode(minedCredV)
+		isCoinbase = fetchRawCreditIsCoinbase(unminedCredV)
+
+		// Same error caveat as above.
+		scrLoc, _ = fetchRawCreditScriptOffset(minedCredV)
+		scrLen, _ = fetchRawCreditScriptLength(minedCredV)
+	}
+
+	recK, recV := existsTxRecord(ns, &op.Hash, block)
+	pkScript, err := extractRawTxRecordPkScript(recK, recV, op.Index,
+		scrLoc, scrLen)
+
+	op.Tree = dcrutil.TxTreeRegular
+	if opCode != OP_NONSTAKE {
+		op.Tree = dcrutil.TxTreeStake
+	}
+
+	blockTime, err := fetchBlockTime(ns, block.Height)
+	if err != nil {
+		return nil, err
+	}
+
+	var c *Credit
+	if !mined {
+		c = &Credit{
+			OutPoint: op,
+			BlockMeta: BlockMeta{
+				Block: Block{Height: -1},
+			},
+			Amount:       amt,
+			PkScript:     pkScript,
+			Received:     extractRawTxRecordReceived(recV),
+			FromCoinBase: isCoinbase,
+		}
+	} else {
+		c = &Credit{
+			OutPoint: op,
+			BlockMeta: BlockMeta{
+				Block: *block,
+				Time:  blockTime,
+			},
+			Amount:       amt,
+			PkScript:     pkScript,
+			Received:     extractRawTxRecordReceived(recV),
+			FromCoinBase: isCoinbase,
+		}
+	}
+
+	return c, nil
+}
+
 func (s *Store) unspentOutputs(ns walletdb.Bucket) ([]*Credit, error) {
 	var unspent []*Credit
 	numUtxos := 0
@@ -1627,42 +1733,17 @@ func (s *Store) unspentOutputs(ns walletdb.Bucket) ([]*Credit, error) {
 			// Skip this k/v pair.
 			return nil
 		}
+
 		err = readUnspentBlock(v, &block)
 		if err != nil {
 			return err
 		}
 
-		blockTime, err := fetchBlockTime(ns, block.Height)
+		cred, err := s.getOutputCreditInfo(ns, op, &block)
 		if err != nil {
 			return err
 		}
-		// TODO(jrick): reading the entire transaction should
-		// be avoidable.  Creating the credit only requires the
-		// output amount and pkScript.
-		rec, err := fetchTxRecord(ns, &op.Hash, &block)
-		if err != nil {
-			return err
-		}
-		txOut := rec.MsgTx.TxOut[op.Index]
 
-		if stake.DetermineTxType(dcrutil.NewTx(&rec.MsgTx)) ==
-			stake.TxTypeRegular {
-			op.Tree = dcrutil.TxTreeRegular
-		} else {
-			op.Tree = dcrutil.TxTreeStake
-		}
-
-		cred := &Credit{
-			OutPoint: op,
-			BlockMeta: BlockMeta{
-				Block: block,
-				Time:  blockTime,
-			},
-			Amount:       dcrutil.Amount(txOut.Value),
-			PkScript:     txOut.PkScript,
-			Received:     rec.Received,
-			FromCoinBase: blockchain.IsCoinBaseTx(&rec.MsgTx),
-		}
 		unspent = append(unspent, cred)
 		numUtxos++
 
@@ -1688,32 +1769,9 @@ func (s *Store) unspentOutputs(ns walletdb.Bucket) ([]*Credit, error) {
 			return err
 		}
 
-		// TODO(jrick): Reading/parsing the entire transaction record
-		// just for the output amount and script can be avoided.
-		recVal := existsRawUnmined(ns, op.Hash[:])
-		var rec TxRecord
-		err = readRawTxRecord(&op.Hash, recVal, &rec)
+		cred, err := s.getOutputCreditInfo(ns, op, nil)
 		if err != nil {
 			return err
-		}
-
-		if stake.DetermineTxType(dcrutil.NewTx(&rec.MsgTx)) ==
-			stake.TxTypeRegular {
-			op.Tree = dcrutil.TxTreeRegular
-		} else {
-			op.Tree = dcrutil.TxTreeStake
-		}
-
-		txOut := rec.MsgTx.TxOut[op.Index]
-		cred := &Credit{
-			OutPoint: op,
-			BlockMeta: BlockMeta{
-				Block: Block{Height: -1},
-			},
-			Amount:       dcrutil.Amount(txOut.Value),
-			PkScript:     txOut.PkScript,
-			Received:     rec.Received,
-			FromCoinBase: blockchain.IsCoinBaseTx(&rec.MsgTx),
 		}
 
 		unspent = append(unspent, cred)

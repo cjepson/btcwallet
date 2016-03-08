@@ -550,8 +550,11 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 							"val for %x missing", credVal),
 							fmt.Errorf("no exists"))
 					}
-					scrPos := fetchRawCreditScriptOffset(credVal)
-					scrLen := fetchRawCreditScriptLength(credVal)
+
+					// Legacy outputs in the credit bucket may be of the
+					// wrong size.
+					scrPos, _ := fetchRawCreditScriptOffset(credVal)
+					scrLen, _ := fetchRawCreditScriptLength(credVal)
 
 					k := extractRawCreditTxRecordKey(credKey)
 					v = existsRawTxRecord(ns, k)
@@ -578,8 +581,11 @@ func (s *Store) PreviousPkScripts(rec *TxRecord, block *Block) ([][]byte, error)
 					"val for %x missing in debit itr", credVal),
 					fmt.Errorf("no exists"))
 			}
-			scrPos := fetchRawCreditScriptOffset(credVal)
-			scrLen := fetchRawCreditScriptLength(credVal)
+
+			// Legacy credit output values may be of the wrong
+			// size.
+			scrPos, _ := fetchRawCreditScriptOffset(credVal)
+			scrLen, _ := fetchRawCreditScriptLength(credVal)
 
 			k := extractRawCreditTxRecordKey(credKey)
 			v := existsRawTxRecord(ns, k)
