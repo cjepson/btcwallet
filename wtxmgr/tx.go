@@ -683,7 +683,7 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 
 		// Legacy credit output values may be of the wrong
 		// size.
-		scrType, _ := fetchRawCreditScriptType(it.cv)
+		scrType, _ := fetchRawUnminedCreditScriptType(it.cv)
 		scrPos, _ := fetchRawUnminedCreditScriptOffset(it.cv)
 		scrLen, _ := fetchRawUnminedCreditScriptLength(it.cv)
 
@@ -1607,9 +1607,9 @@ func (s *Store) UnspentOutputs() ([]*Credit, error) {
 	return credits, err
 }
 
-// getOutputCreditInfo fetches information about a credit from the database,
+// outputCreditInfo fetches information about a credit from the database,
 // fills out a credit struct, and returns it.
-func (s *Store) getOutputCreditInfo(ns walletdb.Bucket, op wire.OutPoint,
+func (s *Store) outputCreditInfo(ns walletdb.Bucket, op wire.OutPoint,
 	block *Block) (*Credit, error) {
 	// It has to exists as a credit or an unmined credit.
 	// Look both of these up. If it doesn't, throw an
@@ -1667,25 +1667,42 @@ func (s *Store) getOutputCreditInfo(ns walletdb.Bucket, op wire.OutPoint,
 		}
 
 		opCode = fetchRawCreditTagOpCode(minedCredV)
-		isCoinbase = fetchRawCreditIsCoinbase(unminedCredV)
+		isCoinbase = fetchRawCreditIsCoinbase(minedCredV)
 
 		// Same error caveat as above.
 		scrLoc, _ = fetchRawCreditScriptOffset(minedCredV)
 		scrLen, _ = fetchRawCreditScriptLength(minedCredV)
 	}
 
-	recK, recV := existsTxRecord(ns, &op.Hash, block)
-	pkScript, err := extractRawTxRecordPkScript(recK, recV, op.Index,
-		scrLoc, scrLen)
+	var recK, recV, pkScript []byte
+	if !mined {
+		recK = op.Hash.Bytes()
+		recV = existsRawUnmined(ns, recK)
+		pkScript, err = extractRawTxRecordPkScript(recK, recV, op.Index,
+			scrLoc, scrLen)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		recK, recV = existsTxRecord(ns, &op.Hash, block)
+		pkScript, err = extractRawTxRecordPkScript(recK, recV, op.Index,
+			scrLoc, scrLen)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	op.Tree = dcrutil.TxTreeRegular
 	if opCode != OP_NONSTAKE {
 		op.Tree = dcrutil.TxTreeStake
 	}
 
-	blockTime, err := fetchBlockTime(ns, block.Height)
-	if err != nil {
-		return nil, err
+	var blockTime time.Time
+	if mined {
+		blockTime, err = fetchBlockTime(ns, block.Height)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var c *Credit
@@ -1739,7 +1756,7 @@ func (s *Store) unspentOutputs(ns walletdb.Bucket) ([]*Credit, error) {
 			return err
 		}
 
-		cred, err := s.getOutputCreditInfo(ns, op, &block)
+		cred, err := s.outputCreditInfo(ns, op, &block)
 		if err != nil {
 			return err
 		}
@@ -1769,7 +1786,7 @@ func (s *Store) unspentOutputs(ns walletdb.Bucket) ([]*Credit, error) {
 			return err
 		}
 
-		cred, err := s.getOutputCreditInfo(ns, op, nil)
+		cred, err := s.outputCreditInfo(ns, op, nil)
 		if err != nil {
 			return err
 		}
@@ -2324,6 +2341,53 @@ func confirms(txHeight, curHeight int32) int32 {
 	}
 }
 
+// minimalCreditToCredit looks up a minimal credit's data and prepares a Credit
+// from this data.
+func (s *Store) minimalCreditToCredit(ns walletdb.Bucket,
+	mc *minimalCredit) (*Credit, error) {
+	var cred *Credit
+
+	switch mc.unmined {
+	case false: // Mined transactions.
+		opHash, err := chainhash.NewHash(mc.txRecordKey[0:32])
+		if err != nil {
+			return nil, err
+		}
+
+		var block Block
+		err = readUnspentBlock(mc.txRecordKey[32:68], &block)
+		if err != nil {
+			return nil, err
+		}
+
+		var op wire.OutPoint
+		op.Hash = *opHash
+		op.Index = mc.index
+
+		cred, err = s.outputCreditInfo(ns, op, &block)
+		if err != nil {
+			return nil, err
+		}
+
+	case true: // Unmined transactions.
+		opHash, err := chainhash.NewHash(mc.txRecordKey[0:32])
+		if err != nil {
+			return nil, err
+		}
+
+		var op wire.OutPoint
+		op.Hash = *opHash
+		op.Index = mc.index
+
+		cred, err = s.outputCreditInfo(ns, op, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return cred, nil
+}
+
 // forEachBreakout is used to break out of a a wallet db ForEach loop.
 var forEachBreakout = errors.New("forEachBreakout")
 
@@ -2521,84 +2585,11 @@ func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amoun
 
 	// Look up the Credit data we need for our utxo and store it.
 	for _, mc := range toUse {
-		switch mc.unmined {
-		case false:
-			opHash, err := chainhash.NewHash(mc.txRecordKey[0:32])
-			if err != nil {
-				return nil, err
-			}
-
-			var block Block
-			err = readUnspentBlock(mc.txRecordKey[32:68], &block)
-			if err != nil {
-				return nil, err
-			}
-
-			blockTime, err := fetchBlockTime(ns, block.Height)
-			if err != nil {
-				return nil, err
-			}
-
-			// TODO(jrick): reading the entire transaction should
-			// be avoidable.  Creating the credit only requires the
-			// output amount and pkScript.
-			rec, err := fetchTxRecord(ns, opHash, &block)
-			if err != nil {
-				return nil, err
-			}
-
-			txOut := rec.MsgTx.TxOut[mc.index]
-			cred := &Credit{
-				OutPoint: wire.OutPoint{
-					*opHash,
-					mc.index,
-					mc.tree,
-				},
-				BlockMeta: BlockMeta{
-					Block: block,
-					Time:  blockTime,
-				},
-				Amount:       dcrutil.Amount(txOut.Value),
-				PkScript:     txOut.PkScript,
-				Received:     rec.Received,
-				FromCoinBase: blockchain.IsCoinBaseTx(&rec.MsgTx),
-			}
-			unspent = append(unspent, cred)
-
-		case true:
-			localOp := new(wire.OutPoint)
-			copy(localOp.Hash[:], mc.txRecordKey[:])
-			localOp.Index = mc.index
-
-			unminedV := existsRawUnmined(ns, mc.txRecordKey)
-			if unminedV == nil {
-				return nil, fmt.Errorf("couldn't find unmined tx %x in "+
-					"unmined bucket",
-					mc.txRecordKey)
-			}
-
-			localMsgTx := new(wire.MsgTx)
-			err = localMsgTx.Deserialize(bytes.NewReader(unminedV[8:]))
-			if err != nil {
-				return nil, err
-			}
-			txOut := localMsgTx.TxOut[mc.index]
-
-			cred := &Credit{
-				OutPoint: wire.OutPoint{
-					localMsgTx.TxSha(),
-					mc.index,
-					mc.tree,
-				},
-				BlockMeta:    BlockMeta{},
-				Amount:       dcrutil.Amount(mc.Amount),
-				PkScript:     txOut.PkScript,
-				Received:     time.Now(),
-				FromCoinBase: false,
-			}
-
-			unspent = append(unspent, cred)
+		credit, err := s.minimalCreditToCredit(ns, mc)
+		if err != nil {
+			return nil, err
 		}
+		unspent = append(unspent, credit)
 	}
 
 	return unspent, nil

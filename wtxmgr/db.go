@@ -79,12 +79,22 @@ const (
 	hashSize  = chainhash.HashSize
 )
 
+// scriptType indicates what type of script a pkScript is for the
+// purposes of the database. In the future this can allow for very
+// fast lookup of the 20-byte (or more) script/public key hash.
+// waddrmgr currently takes addresses instead of 20-byte hashes
+// for look up, so the script type is unused in favor of using
+// txscript to extract the address from a pkScript.
 type scriptType uint8
 
 const (
 	// scriptTypeNonexisting is the uint8 value representing an
 	// unset script type.
 	scriptTypeNonexisting = iota
+
+	// scriptTypeUnspecified is the uint8 value representing an
+	// unknown or unspecified type of script.
+	scriptTypeUnspecified
 
 	// scriptTypeP2PKH is the uint8 value representing a
 	// pay-to-public-key-hash script for a regular transaction.
@@ -115,10 +125,6 @@ const (
 	// scriptTypeP2SH is the uint8 value representing a
 	// pay-to-script-hash script for a stake transaction.
 	scriptTypeSP2SH
-
-	// scriptTypeUnspecified is the uint8 value representing an
-	// unknown or unspecified type of script.
-	scriptTypeUnspecified
 )
 
 const (
@@ -1345,6 +1351,11 @@ func valueUnminedCredit(amount dcrutil.Amount, change bool, opCode uint8,
 	if IsCoinbase {
 		v[8] |= 1 << 5
 	}
+
+	v[9] = byte(scrType)
+	byteOrder.PutUint32(v[10:14], scrLoc)
+	byteOrder.PutUint32(v[14:18], scrLen)
+
 	return v
 }
 
