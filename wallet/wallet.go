@@ -1220,10 +1220,17 @@ func (w *Wallet) syncWithChain() error {
 	// as well.
 	err = w.Manager.ForEachAccountAddress(waddrmgr.ImportedAddrAccount,
 		func(maddr waddrmgr.ManagedAddress) error {
+			log.Infof("adding to watch scr address %v", maddr.Address().EncodeAddress())
 			addrs = append(addrs, maddr.Address())
 			return nil
 		})
 	if err != nil {
+		return err
+	}
+
+	// Watch for notifications.
+	log.Infof("adding to watch addrs for ntfns")
+	if err := chainClient.NotifyReceived(addrs); err != nil {
 		return err
 	}
 

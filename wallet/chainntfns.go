@@ -446,9 +446,13 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 	// Handle incoming SSGen; store them if we own
 	// the ticket used to purchase them.
 	if is, _ := stake.IsSSGen(tx); is {
+		// DEBUG
+		log.Infof("GOT VOTE %v, HANDLING", tx.Sha())
 		if block != nil {
 			txInHash := tx.MsgTx().TxIn[1].PreviousOutPoint.Hash
 			if w.StakeMgr.CheckHashInStore(&txInHash) {
+				// DEBUG
+				log.Infof("INSERT VOTE %v INTO STAKE DB", tx.Sha())
 				w.StakeMgr.InsertSSGen(&block.Hash,
 					int64(block.Height),
 					tx.Sha(),
@@ -456,6 +460,8 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 					&txInHash)
 			}
 		} else {
+			// DEBUG
+			log.Infof("VOTE %v HAS NO BLOCK, DISCARD", tx.Sha())
 			// If there's no associated block, it's potentially a
 			// doublespent SSGen. Just ignore it and wait for it
 			// to later get into a block.
@@ -478,6 +484,8 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 		}
 	}
 
+	// DEBUG
+	log.Infof("DO INSERT TX %v INTO WTXMGR DB", tx.Sha())
 	err := w.TxStore.InsertTx(rec, block)
 	if err != nil {
 		return err
