@@ -1214,6 +1214,19 @@ func (w *Wallet) syncWithChain() error {
 		return err
 	}
 
+	// Add imported addresses to the list of addresses to resync.
+	// TODO We also need to add recursive rescan for any other
+	// used accounts and ensure we're watching addresses for them
+	// as well.
+	err = w.Manager.ForEachAccountAddress(waddrmgr.ImportedAddrAccount,
+		func(maddr waddrmgr.ManagedAddress) error {
+			addrs = append(addrs, maddr.Address())
+			return nil
+		})
+	if err != nil {
+		return err
+	}
+
 	// Compare previously-seen blocks against the chain server.  If any of
 	// these blocks no longer exist, rollback all of the missing blocks
 	// before catching up with the rescan.
