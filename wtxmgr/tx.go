@@ -956,8 +956,11 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 		if err != nil {
 			return false, err
 		}
-		scrLoc := rec.MsgTx.PkScriptLocs()[index]
+		pkScrLocs := rec.MsgTx.PkScriptLocs()
+		scrLoc := pkScrLocs[index]
 		scrLen := len(rec.MsgTx.TxOut[index].PkScript)
+		// DEBUG
+		//fmt.Printf("add credit 1 type %v loc %v len %v\n", scrType, scrLoc, scrLen)
 
 		v := valueUnminedCredit(dcrutil.Amount(rec.MsgTx.TxOut[index].Value),
 			change, opCode, isCoinbase, scrType, uint32(scrLoc),
@@ -990,8 +993,11 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 	if err != nil {
 		return false, err
 	}
-	scrLoc := rec.MsgTx.PkScriptLocs()[index]
+	pkScrLocs := rec.MsgTx.PkScriptLocs()
+	scrLoc := pkScrLocs[index]
 	scrLen := len(rec.MsgTx.TxOut[index].PkScript)
+	// DEBUG
+	//fmt.Printf("add credit 2 type %v loc %v len %v\n", scrType, scrLoc, scrLen)
 	v = valueUnspentCredit(&cred, scrType, uint32(scrLoc), uint32(scrLen))
 	err = putRawCredit(ns, k, v)
 	if err != nil {
@@ -1658,6 +1664,9 @@ func (s *Store) outputCreditInfo(ns walletdb.Bucket, op wire.OutPoint,
 		// transactions. See extractRawTxRecordPkScript.
 		scrLoc, _ = fetchRawUnminedCreditScriptOffset(unminedCredV)
 		scrLen, _ = fetchRawUnminedCreditScriptLength(unminedCredV)
+
+		// DEBUG
+		fmt.Printf("unmined credit scrloc %v, scrlen %v\n", scrLoc, scrLen)
 	}
 	if minedCredV != nil {
 		mined = true
@@ -1672,6 +1681,9 @@ func (s *Store) outputCreditInfo(ns walletdb.Bucket, op wire.OutPoint,
 		// Same error caveat as above.
 		scrLoc, _ = fetchRawCreditScriptOffset(minedCredV)
 		scrLen, _ = fetchRawCreditScriptLength(minedCredV)
+
+		// DEBUG
+		fmt.Printf("mined credit scrloc %v, scrlen %v\n", scrLoc, scrLen)
 	}
 
 	var recK, recV, pkScript []byte

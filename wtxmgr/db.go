@@ -759,7 +759,7 @@ func condenseOpCode(opCode uint8) byte {
 // value function to create either spent or unspent credits.
 func valueUnspentCredit(cred *credit, scrType scriptType, scrLoc uint32,
 	scrLen uint32) []byte {
-	v := make([]byte, 86)
+	v := make([]byte, creditValueSize)
 	byteOrder.PutUint64(v, uint64(cred.amount))
 	v[8] = condenseOpCode(cred.opCode)
 	if cred.change {
@@ -771,7 +771,7 @@ func valueUnspentCredit(cred *credit, scrType scriptType, scrLoc uint32,
 
 	v[81] = byte(scrType)
 	byteOrder.PutUint32(v[82:86], scrLoc)
-	byteOrder.PutUint32(v[82:86], scrLen)
+	byteOrder.PutUint32(v[86:90], scrLen)
 
 	return v
 }
@@ -929,7 +929,7 @@ func unspendRawCredit(ns walletdb.Bucket, k []byte) (dcrutil.Amount, error) {
 	if v == nil {
 		return 0, nil
 	}
-	newv := make([]byte, 9)
+	newv := make([]byte, creditValueSize)
 	copy(newv, v)
 	newv[8] &^= 1 << 0
 
