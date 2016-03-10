@@ -1180,7 +1180,38 @@ func (w *Wallet) activeData() ([]dcrutil.Address, []*wire.OutPoint, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Add imported addresses to the list of addresses to resync.
+	// TODO We also need to add recursive rescan for any other
+	// used accounts and ensure we're watching addresses for them
+	// as well.
+	err = w.Manager.ForEachAccountAddress(waddrmgr.ImportedAddrAccount,
+		func(maddr waddrmgr.ManagedAddress) error {
+			log.Infof("adding to watch scr address %v", maddr.Address().EncodeAddress())
+			addrs = append(addrs, maddr.Address())
+			return nil
+		})
+	if err != nil {
+		return nil, nil, err
+	}
+
 	unspent, err := w.TxStore.UnspentOutpoints()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Add multisignature outpoints to our UTXO watch list.
+	/*
+		mscs, err := w.TxStore.UnspentMultisigCredits()
+		if err != nil {
+			return nil, nil, err
+		}
+
+		for i := range mscs {
+			unspent = append(unspent, mscs[i].OutPoint)
+		}
+	*/
+
 	return addrs, unspent, err
 }
 
@@ -1214,25 +1245,11 @@ func (w *Wallet) syncWithChain() error {
 		return err
 	}
 
-	// Add imported addresses to the list of addresses to resync.
-	// TODO We also need to add recursive rescan for any other
-	// used accounts and ensure we're watching addresses for them
-	// as well.
-	err = w.Manager.ForEachAccountAddress(waddrmgr.ImportedAddrAccount,
-		func(maddr waddrmgr.ManagedAddress) error {
-			log.Infof("adding to watch scr address %v", maddr.Address().EncodeAddress())
-			addrs = append(addrs, maddr.Address())
-			return nil
-		})
-	if err != nil {
-		return err
-	}
-
 	// Watch for notifications.
-	log.Infof("adding to watch addrs for ntfns")
-	if err := chainClient.NotifyReceived(addrs); err != nil {
-		return err
-	}
+	//log.Infof("adding to watch addrs for ntfns")
+	//if err := chainClient.NotifyReceived(addrs); err != nil {
+	//	return err
+	//}
 
 	// Compare previously-seen blocks against the chain server.  If any of
 	// these blocks no longer exist, rollback all of the missing blocks

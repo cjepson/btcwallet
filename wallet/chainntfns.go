@@ -446,13 +446,9 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 	// Handle incoming SSGen; store them if we own
 	// the ticket used to purchase them.
 	if is, _ := stake.IsSSGen(tx); is {
-		// DEBUG
-		log.Infof("GOT VOTE %v, HANDLING", tx.Sha())
 		if block != nil {
 			txInHash := tx.MsgTx().TxIn[1].PreviousOutPoint.Hash
 			if w.StakeMgr.CheckHashInStore(&txInHash) {
-				// DEBUG
-				log.Infof("INSERT VOTE %v INTO STAKE DB", tx.Sha())
 				w.StakeMgr.InsertSSGen(&block.Hash,
 					int64(block.Height),
 					tx.Sha(),
@@ -460,8 +456,6 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 					&txInHash)
 			}
 		} else {
-			// DEBUG
-			log.Infof("VOTE %v HAS NO BLOCK, DISCARD", tx.Sha())
 			// If there's no associated block, it's potentially a
 			// doublespent SSGen. Just ignore it and wait for it
 			// to later get into a block.
@@ -484,8 +478,6 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 		}
 	}
 
-	// DEBUG
-	log.Infof("DO INSERT TX %v INTO WTXMGR DB", tx.Sha())
 	err := w.TxStore.InsertTx(rec, block)
 	if err != nil {
 		return err
@@ -614,36 +606,36 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 				continue
 			}
 		}
-		switch {
-		case class == txscript.PubKeyHashTy:
-			for _, addr := range addrs {
-				ma, err := w.Manager.Address(addr)
-				if err == nil {
-					// TODO: Credits should be added with the
-					// account they belong to, so wtxmgr is able to
-					// track per-account balances.
-					err = w.TxStore.AddCredit(rec, block, uint32(i),
-						ma.Internal())
-					if err != nil {
-						return err
-					}
-					err = w.Manager.MarkUsed(addr)
-					if err != nil {
-						return err
-					}
-					log.Debugf("Marked address %v used", addr)
-					continue
-				}
 
-				// Missing addresses are skipped.  Other errors should
-				// be propagated.
-				if !waddrmgr.IsError(err, waddrmgr.ErrAddressNotFound) {
+		for _, addr := range addrs {
+			ma, err := w.Manager.Address(addr)
+			if err == nil {
+				// TODO: Credits should be added with the
+				// account they belong to, so wtxmgr is able to
+				// track per-account balances.
+				err = w.TxStore.AddCredit(rec, block, uint32(i),
+					ma.Internal())
+				if err != nil {
 					return err
 				}
+				err = w.Manager.MarkUsed(addr)
+				if err != nil {
+					return err
+				}
+				log.Debugf("Marked address %v used", addr)
+				continue
 			}
+
+			// Missing addresses are skipped.  Other errors should
+			// be propagated.
+			if !waddrmgr.IsError(err, waddrmgr.ErrAddressNotFound) {
+				return err
+			}
+		}
+
 		// Handle P2SH addresses that are multisignature scripts
 		// with keys that we own.
-		case class == txscript.ScriptHashTy:
+		if class == txscript.ScriptHashTy {
 			var expandedScript []byte
 			for _, addr := range addrs {
 				var err error
