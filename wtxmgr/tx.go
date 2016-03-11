@@ -592,7 +592,10 @@ func (s *Store) fetchAccountForPkScript(credVal []byte, unminedCredVal []byte,
 			if !ok {
 				return 0, err
 			}
-			if storeErr.Code != ErrNoExists {
+			switch storeErr.Code {
+			case ErrNoExists:
+			case ErrData:
+			default:
 				return 0, err
 			}
 		}
@@ -608,7 +611,10 @@ func (s *Store) fetchAccountForPkScript(credVal []byte, unminedCredVal []byte,
 			if !ok {
 				return 0, err
 			}
-			if storeErr.Code != ErrNoExists {
+			switch storeErr.Code {
+			case ErrNoExists:
+			case ErrData:
+			default:
 				return 0, err
 			}
 		}

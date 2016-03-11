@@ -3196,7 +3196,7 @@ func Open(pubPass []byte, params *chaincfg.Params, db walletdb.DB, waddrmgrNS,
 	// Create a callback for account lookup from waddrmgr.
 	accountCallback := addrMgr.AddrAccount
 
-	txMgr, err := wtxmgr.Open(wtxmgrNS, pruneTickets, params)
+	txMgr, err := wtxmgr.Open(wtxmgrNS, pruneTickets, params, accountCallback)
 	if err != nil {
 		if wtxmgr.IsNoExists(err) {
 			log.Info("No recorded transaction history -- needs full rescan")

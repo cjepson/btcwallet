@@ -1398,7 +1398,7 @@ func putRawUnminedCredit(ns walletdb.Bucket, k, v []byte) error {
 
 func fetchRawUnminedCreditIndex(k []byte) (uint32, error) {
 	if len(k) < unconfCreditKeySize {
-		str := "short unmined credit key"
+		str := "short unmined credit key when look up credit idx"
 		return 0, storeError(ErrData, str, nil)
 	}
 	return byteOrder.Uint32(k[32:36]), nil
@@ -1406,7 +1406,7 @@ func fetchRawUnminedCreditIndex(k []byte) (uint32, error) {
 
 func fetchRawUnminedCreditAmount(v []byte) (dcrutil.Amount, error) {
 	if len(v) < unconfValueSizeLegacy {
-		str := "short unmined credit value"
+		str := "short unmined credit value when look up credit amt"
 		return 0, storeError(ErrData, str, nil)
 	}
 	return dcrutil.Amount(byteOrder.Uint64(v)), nil
@@ -1414,7 +1414,7 @@ func fetchRawUnminedCreditAmount(v []byte) (dcrutil.Amount, error) {
 
 func fetchRawUnminedCreditAmountChange(v []byte) (dcrutil.Amount, bool, error) {
 	if len(v) < unconfValueSizeLegacy {
-		str := "short unmined credit value"
+		str := "short unmined credit value when look up credit amt change"
 		return 0, false, storeError(ErrData, str, nil)
 	}
 	amt := dcrutil.Amount(byteOrder.Uint64(v))
@@ -1432,7 +1432,7 @@ func fetchRawUnminedCreditTagIsCoinbase(v []byte) bool {
 
 func fetchRawUnminedCreditScriptType(v []byte) (scriptType, error) {
 	if len(v) < unconfValueSize {
-		str := "short unmined credit value"
+		str := "short unmined credit value when look up scr type"
 		return scriptTypeNonexisting, storeError(ErrData, str, nil)
 	}
 	return scriptType(v[9] & ^accountExistsMask), nil
@@ -1440,7 +1440,7 @@ func fetchRawUnminedCreditScriptType(v []byte) (scriptType, error) {
 
 func fetchRawUnminedCreditScriptOffset(v []byte) (uint32, error) {
 	if len(v) < unconfValueSize {
-		str := "short unmined credit value"
+		str := "short unmined credit value when look up scr offset"
 		return scriptLocNotStored, storeError(ErrData, str, nil)
 	}
 	return byteOrder.Uint32(v[10:14]), nil
@@ -1448,7 +1448,7 @@ func fetchRawUnminedCreditScriptOffset(v []byte) (uint32, error) {
 
 func fetchRawUnminedCreditScriptLength(v []byte) (uint32, error) {
 	if len(v) < unconfValueSize {
-		str := "short unmined credit value"
+		str := "short unmined credit value when look up scr len"
 		return 0, storeError(ErrData, str, nil)
 	}
 	return byteOrder.Uint32(v[14:18]), nil
@@ -1456,7 +1456,7 @@ func fetchRawUnminedCreditScriptLength(v []byte) (uint32, error) {
 
 func fetchRawUnminedCreditAccount(v []byte) (uint32, error) {
 	if len(v) < unconfValueSize {
-		str := "short unmined credit value"
+		str := "short unmined credit value when look up account"
 		return 0, storeError(ErrData, str, nil)
 	}
 

@@ -616,7 +616,7 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 				// account they belong to, so wtxmgr is able to
 				// track per-account balances.
 				err = w.TxStore.AddCredit(rec, block, uint32(i),
-					ma.Internal())
+					ma.Internal(), ma.Account())
 				if err != nil {
 					return err
 				}
