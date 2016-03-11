@@ -2393,7 +2393,7 @@ func (s *Store) unspentMultisigCreditsForAddress(ns walletdb.Bucket,
 // amount passed. If not enough funds are found, a nil pointer is returned
 // without error.
 func (s *Store) UnspentOutputsForAmount(amt dcrutil.Amount, height int32,
-	minConf int32) ([]*Credit, error) {
+	minConf int32, all bool, account uint32) ([]*Credit, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -2405,7 +2405,8 @@ func (s *Store) UnspentOutputsForAmount(amt dcrutil.Amount, height int32,
 	var credits []*Credit
 	err := scopedView(s.namespace, func(ns walletdb.Bucket) error {
 		var err error
-		credits, err = s.unspentOutputsForAmount(ns, amt, height, minConf)
+		credits, err = s.unspentOutputsForAmount(ns, amt, height, minConf,
+			all, account)
 		return err
 	})
 	return credits, err
@@ -2443,6 +2444,80 @@ func confirms(txHeight, curHeight int32) int32 {
 	default:
 		return curHeight - txHeight + 1
 	}
+}
+
+// outputCreditInfo fetches information about a credit from the database,
+// fills out a credit struct, and returns it.
+func (s *Store) fastCreditPkScriptLookup(ns walletdb.Bucket, credKey []byte,
+	unminedCredKey []byte) ([]byte, error) {
+	// It has to exists as a credit or an unmined credit.
+	// Look both of these up. If it doesn't, throw an
+	// error. Check unmined first, then mined.
+	var minedCredV []byte
+	unminedCredV := existsRawUnminedCredit(ns, unminedCredKey)
+	if unminedCredV == nil {
+		minedCredV = existsRawCredit(ns, credKey)
+	}
+	if minedCredV == nil && unminedCredV == nil {
+		errStr := fmt.Errorf("missing utxo during pkscript lookup")
+		return nil, storeError(ErrNoExists, "couldn't find relevant credit "+
+			"for unspent output during pkscript look up", errStr)
+	}
+
+	var scrLoc, scrLen uint32
+
+	mined := false
+	if unminedCredV != nil {
+		// These errors are skipped because they may throw incorrectly
+		// on values recorded in older versions of the wallet. 0-offset
+		// script locs will cause raw extraction from the deserialized
+		// transactions. See extractRawTxRecordPkScript.
+		scrLoc, _ = fetchRawUnminedCreditScriptOffset(unminedCredV)
+		scrLen, _ = fetchRawUnminedCreditScriptLength(unminedCredV)
+
+		// DEBUG
+		// fmt.Printf("unmined credit scrloc %v, scrlen %v\n", scrLoc, scrLen)
+	}
+	if minedCredV != nil {
+		mined = true
+
+		// Same error caveat as above.
+		scrLoc, _ = fetchRawCreditScriptOffset(minedCredV)
+		scrLen, _ = fetchRawCreditScriptLength(minedCredV)
+
+		// DEBUG
+		// fmt.Printf("mined credit scrloc %v, scrlen %v\n", scrLoc, scrLen)
+	}
+
+	var recK, recV, pkScript []byte
+	var err error
+	if !mined {
+		var op wire.OutPoint
+		err := readCanonicalOutPoint(unminedCredKey, &op)
+		if err != nil {
+			return nil, err
+		}
+
+		recK = op.Hash.Bytes()
+		recV = existsRawUnmined(ns, recK)
+		pkScript, err = extractRawTxRecordPkScript(recK, recV, op.Index,
+			scrLoc, scrLen)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		recK := extractRawCreditTxRecordKey(credKey)
+		recV = existsRawTxRecord(ns, recK)
+		idx := extractRawCreditIndex(credKey)
+
+		pkScript, err = extractRawTxRecordPkScript(recK, recV, idx,
+			scrLoc, scrLen)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return pkScript, nil
 }
 
 // minimalCreditToCredit looks up a minimal credit's data and prepares a Credit
@@ -2495,12 +2570,33 @@ func (s *Store) minimalCreditToCredit(ns walletdb.Bucket,
 // forEachBreakout is used to break out of a a wallet db ForEach loop.
 var forEachBreakout = errors.New("forEachBreakout")
 
+// isAcctValidGenerator generates a function to use to check if the account
+// is valid based on the passed arguments. All indicates to use all accounts,
+// while account indicates to use a certain account. If all is false, then
+// the passed account will be used.
+func (s *Store) isAcctValidGenerator(all bool, account uint32) func(wanted, this uint32) bool {
+	var isAcctValid func(wanted, this uint32) bool
+	if all {
+		isAcctValid = func(wanted, this uint32) bool {
+			return true
+		}
+	} else {
+		isAcctValid = func(wanted, this uint32) bool {
+			return wanted == this
+		}
+	}
+
+	return isAcctValid
+}
+
 func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amount,
-	syncHeight int32, minConf int32) ([]*Credit, error) {
+	syncHeight int32, minConf int32, all bool, account uint32) ([]*Credit, error) {
 	var eligible []*minimalCredit
 	var toUse []*minimalCredit
 	var unspent []*Credit
 	found := dcrutil.Amount(0)
+
+	isAcctValid := s.isAcctValidGenerator(all, account)
 
 	err := ns.Bucket(bucketUnspent).ForEach(func(k, v []byte) error {
 		if found >= needed {
@@ -2521,6 +2617,20 @@ func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amoun
 
 		cVal := existsRawCredit(ns, cKey)
 		if cVal == nil {
+			return nil
+		}
+
+		// Check the account first.
+		pkScript, err := s.fastCreditPkScriptLookup(ns, cKey, nil)
+		if err != nil {
+			return err
+		}
+		thisAcct, err := s.fetchAccountForPkScript(cVal, nil, pkScript,
+			s.acctLookupFunc)
+		if err != nil {
+			return err
+		}
+		if !isAcctValid(account, thisAcct) {
 			return nil
 		}
 
@@ -2608,6 +2718,20 @@ func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amoun
 			// Make sure this output was not spent by an unmined transaction.
 			// If it was, skip this credit.
 			if existsRawUnminedInput(ns, k) != nil {
+				return nil
+			}
+
+			// Check the account first.
+			pkScript, err := s.fastCreditPkScriptLookup(ns, nil, k)
+			if err != nil {
+				return err
+			}
+			thisAcct, err := s.fetchAccountForPkScript(nil, v, pkScript,
+				s.acctLookupFunc)
+			if err != nil {
+				return err
+			}
+			if !isAcctValid(account, thisAcct) {
 				return nil
 			}
 

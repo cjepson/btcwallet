@@ -411,7 +411,8 @@ func (w *Wallet) txToPairs(pairs map[string]dcrutil.Amount, account uint32,
 	needed += feeForSize(feeIncrement,
 		estimateTxSize(len(pairs)*2, len(pairs)))
 
-	eligible, err := w.findEligibleOutputsAmount(account, minconf, needed, bs)
+	eligible, err := w.findEligibleOutputsAmount(false, account, minconf,
+		needed, bs)
 	if err != nil {
 		return nil, err
 	}
@@ -701,7 +702,7 @@ func (w *Wallet) txToMultisig(account uint32, amount dcrutil.Amount,
 
 	// Instead of taking reward addresses by arg, just create them now  and
 	// automatically find all eligible outputs from all current utxos.
-	eligible, err := w.findEligibleOutputsAmount(account, minconf,
+	eligible, err := w.findEligibleOutputsAmount(false, account, minconf,
 		amountRequired, bs)
 	if err != nil {
 		return errorOut(err)
@@ -1311,7 +1312,7 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	// Instead of taking reward addresses by arg, just create them now and
 	// automatically find all eligible outputs from all current utxos.
 	amountNeeded := req.minBalance + ticketPrice + estFee
-	eligible, err := w.findEligibleOutputsAmount(account, req.minConf,
+	eligible, err := w.findEligibleOutputsAmount(false, account, req.minConf,
 		amountNeeded, bs)
 	if err != nil {
 		return nil, err
@@ -1620,10 +1621,11 @@ func (w *Wallet) FindEligibleOutputs(account uint32, minconf int32,
 
 // findEligibleOutputsAmount uses wtxmgr to find a number of unspent
 // outputs while doing maturity checks there.
-func (w *Wallet) findEligibleOutputsAmount(account uint32, minconf int32,
+func (w *Wallet) findEligibleOutputsAmount(all bool, account uint32, minconf int32,
 	amount dcrutil.Amount, bs *waddrmgr.BlockStamp) ([]wtxmgr.Credit, error) {
 
-	unspent, err := w.TxStore.UnspentOutputsForAmount(amount, bs.Height, minconf)
+	unspent, err := w.TxStore.UnspentOutputsForAmount(amount, bs.Height, minconf,
+		all, account)
 	if err != nil {
 		errRepair := w.attemptToRepairInconsistencies()
 		if errRepair != nil {
