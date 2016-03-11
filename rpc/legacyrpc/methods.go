@@ -528,7 +528,7 @@ func GetBalance(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 			balType = wtxmgr.BFBalanceFullScan
 		default:
 			return nil, fmt.Errorf("unknown balance type '%v', please use "+
-				"spendable, locked, all, or fullscan and note that spendable"+
+				"spendable, locked, all, or fullscan and note that spendable "+
 				"will override your accounts setting (use fullscan to see "+
 				"your spendable account balance)", *cmd.BalanceType)
 		}
