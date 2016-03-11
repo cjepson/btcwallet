@@ -630,7 +630,7 @@ func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 	// entire transaction.
 	if scrLoc == scriptLocNotStored {
 		// DEBUG
-		fmt.Printf("deserialize whole tx branch\n")
+		// fmt.Printf("deserialize whole tx branch\n")
 		var rec TxRecord
 		copy(rec.Hash[:], k) // Silly but need an array
 		err := readRawTxRecord(&rec.Hash, v, &rec)
@@ -648,7 +648,7 @@ func extractRawTxRecordPkScript(k, v []byte, index uint32, scrLoc uint32,
 		// timestamp that prefixes it.
 
 		// DEBUG
-		fmt.Printf("copy script branch\n")
+		// fmt.Printf("copy script branch\n")
 		scrLocInt := int(scrLoc) + int64Size
 		scrLenInt := int(scrLen)
 		pkScript = make([]byte, scrLenInt)
@@ -1382,7 +1382,7 @@ func valueUnminedCredit(amount dcrutil.Amount, change bool, opCode uint8,
 	v[9] |= accountExistsMask
 	byteOrder.PutUint32(v[10:14], scrLoc)
 	byteOrder.PutUint32(v[14:18], scrLen)
-	byteOrder.PutUint32(v[18:22], scrLen)
+	byteOrder.PutUint32(v[18:22], account)
 
 	return v
 }

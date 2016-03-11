@@ -600,6 +600,9 @@ func (s *Store) fetchAccountForPkScript(credVal []byte, unminedCredVal []byte,
 			}
 		}
 
+		// DEBUG
+		fmt.Printf("minedcred discovered account %v\n", acct)
+
 		if err == nil {
 			return acct, nil
 		}
@@ -618,6 +621,9 @@ func (s *Store) fetchAccountForPkScript(credVal []byte, unminedCredVal []byte,
 				return 0, err
 			}
 		}
+
+		// DEBUG
+		fmt.Printf("unminedcred discovered account %v\n", acct)
 
 		if err == nil {
 			return acct, nil
@@ -641,6 +647,8 @@ func (s *Store) fetchAccountForPkScript(credVal []byte, unminedCredVal []byte,
 	if err != nil {
 		return 0, err
 	}
+	// DEBUG
+	fmt.Printf("waddrmgr discovered account %v\n", acct)
 
 	return acct, nil
 }
@@ -2570,33 +2578,12 @@ func (s *Store) minimalCreditToCredit(ns walletdb.Bucket,
 // forEachBreakout is used to break out of a a wallet db ForEach loop.
 var forEachBreakout = errors.New("forEachBreakout")
 
-// isAcctValidGenerator generates a function to use to check if the account
-// is valid based on the passed arguments. All indicates to use all accounts,
-// while account indicates to use a certain account. If all is false, then
-// the passed account will be used.
-func (s *Store) isAcctValidGenerator(all bool, account uint32) func(wanted, this uint32) bool {
-	var isAcctValid func(wanted, this uint32) bool
-	if all {
-		isAcctValid = func(wanted, this uint32) bool {
-			return true
-		}
-	} else {
-		isAcctValid = func(wanted, this uint32) bool {
-			return wanted == this
-		}
-	}
-
-	return isAcctValid
-}
-
 func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amount,
 	syncHeight int32, minConf int32, all bool, account uint32) ([]*Credit, error) {
 	var eligible []*minimalCredit
 	var toUse []*minimalCredit
 	var unspent []*Credit
 	found := dcrutil.Amount(0)
-
-	isAcctValid := s.isAcctValidGenerator(all, account)
 
 	err := ns.Bucket(bucketUnspent).ForEach(func(k, v []byte) error {
 		if found >= needed {
@@ -2620,18 +2607,22 @@ func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amoun
 			return nil
 		}
 
-		// Check the account first.
-		pkScript, err := s.fastCreditPkScriptLookup(ns, cKey, nil)
-		if err != nil {
-			return err
-		}
-		thisAcct, err := s.fetchAccountForPkScript(cVal, nil, pkScript,
-			s.acctLookupFunc)
-		if err != nil {
-			return err
-		}
-		if !isAcctValid(account, thisAcct) {
-			return nil
+		if !all {
+			// Check the account first.
+			pkScript, err := s.fastCreditPkScriptLookup(ns, cKey, nil)
+			if err != nil {
+				return err
+			}
+			thisAcct, err := s.fetchAccountForPkScript(cVal, nil, pkScript,
+				s.acctLookupFunc)
+			if err != nil {
+				return err
+			}
+			// DEBUG
+			fmt.Printf("account %v, thisAcct %v\n", account, thisAcct)
+			if account != thisAcct {
+				return nil
+			}
 		}
 
 		amt, spent, err := fetchRawCreditAmountSpent(cVal)
@@ -2722,17 +2713,21 @@ func (s *Store) unspentOutputsForAmount(ns walletdb.Bucket, needed dcrutil.Amoun
 			}
 
 			// Check the account first.
-			pkScript, err := s.fastCreditPkScriptLookup(ns, nil, k)
-			if err != nil {
-				return err
-			}
-			thisAcct, err := s.fetchAccountForPkScript(nil, v, pkScript,
-				s.acctLookupFunc)
-			if err != nil {
-				return err
-			}
-			if !isAcctValid(account, thisAcct) {
-				return nil
+			if !all {
+				pkScript, err := s.fastCreditPkScriptLookup(ns, nil, k)
+				if err != nil {
+					return err
+				}
+				thisAcct, err := s.fetchAccountForPkScript(nil, v, pkScript,
+					s.acctLookupFunc)
+				if err != nil {
+					return err
+				}
+				// DEBUG
+				fmt.Printf("account %v, thisAcct %v\n", account, thisAcct)
+				if account != thisAcct {
+					return nil
+				}
 			}
 
 			amt, err := fetchRawUnminedCreditAmount(v)
