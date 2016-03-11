@@ -189,20 +189,6 @@ type Credit struct {
 	FromCoinBase bool
 }
 
-// Store implements a transaction store for storing and managing wallet
-// transactions.
-type Store struct {
-	mutex    *sync.Mutex
-	isClosed bool
-
-	namespace   walletdb.Namespace
-	chainParams *chaincfg.Params
-
-	// Event callbacks.  These execute in the same goroutine as the wtxmgr
-	// caller.
-	NotifyUnspent func(hash *chainhash.Hash, index uint32)
-}
-
 // SortedTxRecords is a list of transaction records that can be sorted.
 type SortableTxRecords []*TxRecord
 
@@ -387,17 +373,33 @@ func (s *Store) pruneOldTickets(ns walletdb.Bucket,
 	return putMinedBalance(ns, minedBalance)
 }
 
+// Store implements a transaction store for storing and managing wallet
+// transactions.
+type Store struct {
+	mutex    *sync.Mutex
+	isClosed bool
+
+	namespace      walletdb.Namespace
+	chainParams    *chaincfg.Params
+	acctLookupFunc func(dcrutil.Address) (uint32, error)
+
+	// Event callbacks.  These execute in the same goroutine as the wtxmgr
+	// caller.
+	NotifyUnspent func(hash *chainhash.Hash, index uint32)
+}
+
 // Open opens the wallet transaction store from a walletdb namespace.  If the
 // store does not exist, ErrNoExist is returned.  Existing stores will be
 // upgraded to new database formats as necessary.
 func Open(namespace walletdb.Namespace, pruneTickets bool,
-	chainParams *chaincfg.Params) (*Store, error) {
+	chainParams *chaincfg.Params,
+	acctLookupFunc func(dcrutil.Address) (uint32, error)) (*Store, error) {
 	// Open the store, upgrading to the latest version as needed.
 	err := openStore(namespace)
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{new(sync.Mutex), false, namespace, chainParams, nil} // TODO: set callbacks
+	s := &Store{new(sync.Mutex), false, namespace, chainParams, acctLookupFunc, nil} // TODO: set callbacks
 
 	// Skip pruning on simnet, because the adjustment times are
 	// so short.
@@ -426,7 +428,7 @@ func Create(namespace walletdb.Namespace, chainParams *chaincfg.Params) (*Store,
 	if err != nil {
 		return nil, err
 	}
-	return &Store{new(sync.Mutex), false, namespace, chainParams, nil}, nil // TODO: set callbacks
+	return &Store{new(sync.Mutex), false, namespace, chainParams, nil, nil}, nil // TODO: set callbacks
 }
 
 // Close safely closes the transaction manager by waiting for the mutex to
@@ -574,6 +576,69 @@ func (s *Store) PruneUnconfirmed(height int32, stakeDiff int64) error {
 	return nil
 }
 
+// fetchAccountForPkScript fetches an account for a given pkScript given a
+// credit value, the script, and an account lookup function. It does this
+// to maintain compatibility with older versions of the database.
+func (s *Store) fetchAccountForPkScript(credVal []byte, unminedCredVal []byte,
+	pkScript []byte,
+	acctLookupFunc func(dcrutil.Address) (uint32, error)) (uint32, error) {
+	// Attempt to get the account from the mined credit. If the
+	// account was never stored, we can ignore the error and
+	// fall through to do the lookup with the acctLookupFunc.
+	if credVal != nil {
+		acct, err := fetchRawCreditAccount(credVal)
+		if err != nil {
+			storeErr, ok := err.(Error)
+			if !ok {
+				return 0, err
+			}
+			if storeErr.Code != ErrNoExists {
+				return 0, err
+			}
+		}
+
+		if err == nil {
+			return acct, nil
+		}
+	}
+	if unminedCredVal != nil {
+		acct, err := fetchRawUnminedCreditAccount(unminedCredVal)
+		if err != nil {
+			storeErr, ok := err.(Error)
+			if !ok {
+				return 0, err
+			}
+			if storeErr.Code != ErrNoExists {
+				return 0, err
+			}
+		}
+
+		if err == nil {
+			return acct, nil
+		}
+	}
+
+	// Neither credVal or unminedCredVal were passed, or if they
+	// were, they didn't have the account set. Figure out the
+	// account from the pkScript the expensive way.
+	_, addrs, _, err :=
+		txscript.ExtractPkScriptAddrs(txscript.DefaultScriptVersion,
+			pkScript, s.chainParams)
+	if err != nil {
+		return 0, err
+	}
+
+	// Only look at the first address returned. This does not
+	// handle multisignature or other custom pkScripts in the
+	// correct way, which requires multiple account tracking.
+	acct, err := acctLookupFunc(addrs[0])
+	if err != nil {
+		return 0, err
+	}
+
+	return acct, nil
+}
+
 // moveMinedTx moves a transaction record from the unmined buckets to block
 // buckets.
 func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
@@ -687,11 +752,24 @@ func (s *Store) moveMinedTx(ns walletdb.Bucket, rec *TxRecord, recKey,
 		scrPos, _ := fetchRawUnminedCreditScriptOffset(it.cv)
 		scrLen, _ := fetchRawUnminedCreditScriptLength(it.cv)
 
+		// Grab the pkScript quickly.
+		pkScript, err := extractRawTxRecordPkScript(recKey, recVal,
+			cred.outPoint.Index, scrPos, scrLen)
+		if err != nil {
+			return err
+		}
+
+		acct, err := s.fetchAccountForPkScript(nil, it.cv, pkScript,
+			s.acctLookupFunc)
+		if err != nil {
+			return err
+		}
+
 		err = it.delete()
 		if err != nil {
 			return err
 		}
-		err = putUnspentCredit(ns, &cred, scrType, scrPos, scrLen)
+		err = putUnspentCredit(ns, &cred, scrType, scrPos, scrLen, acct)
 		if err != nil {
 			return err
 		}
@@ -860,7 +938,7 @@ func (s *Store) insertMinedTx(ns walletdb.Bucket, rec *TxRecord,
 // that are known to contain credits when a transaction or merkleblock is
 // inserted into the store.
 func (s *Store) AddCredit(rec *TxRecord, block *BlockMeta, index uint32,
-	change bool) error {
+	change bool, account uint32) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -877,7 +955,7 @@ func (s *Store) AddCredit(rec *TxRecord, block *BlockMeta, index uint32,
 	var isNew bool
 	err := scopedUpdate(s.namespace, func(ns walletdb.Bucket) error {
 		var err error
-		isNew, err = s.addCredit(ns, rec, block, index, change)
+		isNew, err = s.addCredit(ns, rec, block, index, change, account)
 		return err
 	})
 	if err == nil && isNew && s.NotifyUnspent != nil {
@@ -943,7 +1021,7 @@ func pkScriptType(pkScript []byte) (scriptType, error) {
 }
 
 func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
-	index uint32, change bool) (bool, error) {
+	index uint32, change bool, account uint32) (bool, error) {
 	opCode := getP2PKHOpCode(rec.MsgTx.TxOut[index].PkScript)
 	isCoinbase := blockchain.IsCoinBaseTx(&rec.MsgTx)
 
@@ -964,7 +1042,7 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 
 		v := valueUnminedCredit(dcrutil.Amount(rec.MsgTx.TxOut[index].Value),
 			change, opCode, isCoinbase, scrType, uint32(scrLoc),
-			uint32(scrLen))
+			uint32(scrLen), account)
 		return true, putRawUnminedCredit(ns, k, v)
 	}
 
@@ -998,7 +1076,8 @@ func (s *Store) addCredit(ns walletdb.Bucket, rec *TxRecord, block *BlockMeta,
 	scrLen := len(rec.MsgTx.TxOut[index].PkScript)
 	// DEBUG
 	//fmt.Printf("add credit 2 type %v loc %v len %v\n", scrType, scrLoc, scrLen)
-	v = valueUnspentCredit(&cred, scrType, uint32(scrLoc), uint32(scrLen))
+	v = valueUnspentCredit(&cred, scrType, uint32(scrLoc), uint32(scrLen),
+		account)
 	err = putRawCredit(ns, k, v)
 	if err != nil {
 		return false, err
@@ -1431,9 +1510,16 @@ func (s *Store) rollbackTransaction(hash chainhash.Hash, b *blockRecord,
 		scrLoc := rec.MsgTx.PkScriptLocs()[i]
 		scrLen := len(rec.MsgTx.TxOut[i].PkScript)
 
+		acct, err := s.fetchAccountForPkScript(v, nil, output.PkScript,
+			s.acctLookupFunc)
+		if err != nil {
+			return err
+		}
+
 		outPointKey := canonicalOutPoint(&rec.Hash, uint32(i))
 		unminedCredVal := valueUnminedCredit(amt, change, opCode,
-			isCoinbase, scrType, uint32(scrLoc), uint32(scrLen))
+			isCoinbase, scrType, uint32(scrLoc), uint32(scrLen),
+			acct)
 		err = putRawUnminedCredit(ns, outPointKey, unminedCredVal)
 		if err != nil {
 			return err

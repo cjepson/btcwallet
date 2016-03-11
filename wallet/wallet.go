@@ -3192,6 +3192,10 @@ func Open(pubPass []byte, params *chaincfg.Params, db walletdb.DB, waddrmgrNS,
 	if err != nil {
 		return nil, err
 	}
+
+	// Create a callback for account lookup from waddrmgr.
+	accountCallback := addrMgr.AddrAccount
+
 	txMgr, err := wtxmgr.Open(wtxmgrNS, pruneTickets, params)
 	if err != nil {
 		if wtxmgr.IsNoExists(err) {
