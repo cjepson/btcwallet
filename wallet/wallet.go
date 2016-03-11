@@ -1371,6 +1371,7 @@ type (
 		spendLimit dcrutil.Amount
 		minConf    int32
 		ticketAddr dcrutil.Address
+		acct       uint32
 		resp       chan purchaseTicketResponse
 	}
 
@@ -1599,13 +1600,15 @@ func (w *Wallet) CreateSSRtx(ticketHash chainhash.Hash) (*CreatedTx, error) {
 // CreatePurchaseTicket receives a request from the RPC and ships it to txCreator
 // to purchase a new ticket.
 func (w *Wallet) CreatePurchaseTicket(minBalance, spendLimit dcrutil.Amount,
-	minConf int32, ticketAddr dcrutil.Address) (interface{}, error) {
+	minConf int32, ticketAddr dcrutil.Address, account uint32) (interface{},
+	error) {
 
 	req := purchaseTicketRequest{
 		minBalance: minBalance,
 		spendLimit: spendLimit,
 		minConf:    minConf,
 		ticketAddr: ticketAddr,
+		acct:       account,
 		resp:       make(chan purchaseTicketResponse),
 	}
 	w.purchaseTicketRequests <- req
@@ -1805,15 +1808,7 @@ func (w *Wallet) AccountUsed(account uint32) (bool, error) {
 // include a UTXO.
 func (w *Wallet) CalculateBalance(confirms int32, balanceType wtxmgr.BehaviorFlags) (dcrutil.Amount, error) {
 	blk := w.Manager.SyncedTo()
-	return w.TxStore.Balance(confirms, blk.Height, balanceType)
-}
-
-// Balances records total, spendable (by policy), and immature coinbase
-// reward balance amounts.
-type Balances struct {
-	Total          dcrutil.Amount
-	Spendable      dcrutil.Amount
-	ImmatureReward dcrutil.Amount
+	return w.TxStore.Balance(confirms, blk.Height, balanceType, true, 0)
 }
 
 // CalculateAccountBalances sums the amounts of all unspent transaction
@@ -1822,42 +1817,51 @@ type Balances struct {
 // This function is much slower than it needs to be since transactions outputs
 // are not indexed by the accounts they credit to, and all unspent transaction
 // outputs must be iterated.
-func (w *Wallet) CalculateAccountBalances(account uint32,
-	confirms int32) (Balances, error) {
-	var bals Balances
+func (w *Wallet) CalculateAccountBalances(account uint32, confirms int32,
+	balanceType wtxmgr.BehaviorFlags) (dcrutil.Amount, error) {
+	var bal dcrutil.Amount
+	var err error
 
 	// Get current block.  The block height used for calculating
 	// the number of tx confirmations.
 	syncBlock := w.Manager.SyncedTo()
 
-	unspent, err := w.TxStore.UnspentOutputs()
-	if err != nil {
-		return bals, err
-	}
-	for i := range unspent {
-		output := unspent[i]
-
-		var outputAcct uint32
-		_, addrs, _, err := txscript.ExtractPkScriptAddrs(
-			txscript.DefaultScriptVersion, output.PkScript, w.chainParams)
-		if err == nil && len(addrs) > 0 {
-			outputAcct, err = w.Manager.AddrAccount(addrs[0])
+	/*
+		unspent, err := w.TxStore.UnspentOutputs()
+		if err != nil {
+			return bals, err
 		}
-		if err != nil || outputAcct != account {
-			continue
-		}
+		for i := range unspent {
+			output := unspent[i]
 
-		bals.Total += output.Amount
-		if output.FromCoinBase {
-			var target = int32(w.ChainParams().CoinbaseMaturity)
-			if !confirmed(target, output.Height, syncBlock.Height) {
-				bals.ImmatureReward += output.Amount
+			var outputAcct uint32
+			_, addrs, _, err := txscript.ExtractPkScriptAddrs(
+				txscript.DefaultScriptVersion, output.PkScript, w.chainParams)
+			if err == nil && len(addrs) > 0 {
+				outputAcct, err = w.Manager.AddrAccount(addrs[0])
 			}
-		} else if confirmed(confirms, output.Height, syncBlock.Height) {
-			bals.Spendable += output.Amount
+			if err != nil || outputAcct != account {
+				continue
+			}
+
+			bals.Total += output.Amount
+			if output.FromCoinBase {
+				var target = int32(w.ChainParams().CoinbaseMaturity)
+				if !confirmed(target, output.Height, syncBlock.Height) {
+					bals.ImmatureReward += output.Amount
+				}
+			} else if confirmed(confirms, output.Height, syncBlock.Height) {
+				bals.Spendable += output.Amount
+			}
 		}
+	*/
+	bal, err = w.TxStore.Balance(confirms, syncBlock.Height,
+		balanceType, false, account)
+	if err != nil {
+		return 0, err
 	}
-	return bals, nil
+
+	return bal, nil
 }
 
 // CurrentAddress gets the most recently requested payment address from a wallet.

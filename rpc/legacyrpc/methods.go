@@ -511,7 +511,7 @@ func GetBalance(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 
 	var balance dcrutil.Amount
 	var err error
-	accountName := "default"
+	accountName := "*"
 	if cmd.Account != nil {
 		accountName = *cmd.Account
 	}
@@ -528,10 +528,12 @@ func GetBalance(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 			balType = wtxmgr.BFBalanceFullScan
 		default:
 			return nil, fmt.Errorf("unknown balance type '%v', please use "+
-				"spendable, locked, all, or fullscan", *cmd.BalanceType)
+				"spendable, locked, all, or fullscan and note that spendable"+
+				"will override your accounts setting (use fullscan to see "+
+				"your spendable account balance)", *cmd.BalanceType)
 		}
 	}
-	if accountName == "default" {
+	if accountName == "*" {
 		balance, err = w.CalculateBalance(int32(*cmd.MinConf),
 			balType)
 	} else {
@@ -540,11 +542,12 @@ func GetBalance(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		bals, err := w.CalculateAccountBalances(account, int32(*cmd.MinConf))
+		bal, err := w.CalculateAccountBalances(account, int32(*cmd.MinConf),
+			balType)
 		if err != nil {
 			return nil, err
 		}
-		balance = bals.Spendable
+		balance = bal
 	}
 	if err != nil {
 		return nil, err
@@ -700,12 +703,18 @@ func GetUnconfirmedBalance(icmd interface{}, w *wallet.Wallet) (interface{}, err
 	if err != nil {
 		return nil, err
 	}
-	bals, err := w.CalculateAccountBalances(account, 1)
+	bal1Conf, err := w.CalculateAccountBalances(account, 1,
+		wtxmgr.BFBalanceFullScan)
+	if err != nil {
+		return nil, err
+	}
+	bal0Conf, err := w.CalculateAccountBalances(account, 0,
+		wtxmgr.BFBalanceFullScan)
 	if err != nil {
 		return nil, err
 	}
 
-	return (bals.Total - bals.Spendable).ToCoin(), nil
+	return (bal0Conf - bal1Conf).ToCoin(), nil
 }
 
 // ImportPrivKey handles an importprivkey request by parsing
@@ -1753,11 +1762,12 @@ func ListAccounts(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		if err != nil {
 			return nil, &ErrAccountNameNotFound
 		}
-		bals, err := w.CalculateAccountBalances(account, minConf)
+		bal, err := w.CalculateAccountBalances(account, minConf,
+			wtxmgr.BFBalanceFullScan)
 		if err != nil {
 			return nil, err
 		}
-		accountBalances[acctName] = bals.Spendable.ToCoin()
+		accountBalances[acctName] = bal.ToCoin()
 	}
 	// Return the map.  This will be marshaled into a JSON object.
 	return accountBalances, nil
@@ -2161,6 +2171,11 @@ func PurchaseTicket(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		return nil, ErrNeedPositiveSpendLimit
 	}
 
+	account, err := w.Manager.LookupAccount(cmd.FromAccount)
+	if err != nil {
+		return nil, err
+	}
+
 	// Override the minimum number of required confirmations if specified
 	// and enforce it is positive.
 	minConf := int32(1)
@@ -2181,7 +2196,8 @@ func PurchaseTicket(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		ticketAddr = addr
 	}
 
-	hash, err := w.CreatePurchaseTicket(0, spendLimit, minConf, ticketAddr)
+	hash, err := w.CreatePurchaseTicket(0, spendLimit, minConf, ticketAddr,
+		account)
 	if err != nil {
 		if err == wallet.ErrSStxInputOverflow {
 			hash = ""

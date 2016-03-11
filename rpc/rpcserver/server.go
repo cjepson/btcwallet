@@ -49,6 +49,7 @@ import (
 	"github.com/decred/dcrwallet/waddrmgr"
 	"github.com/decred/dcrwallet/wallet"
 	"github.com/decred/dcrwallet/walletdb"
+	"github.com/decred/dcrwallet/wtxmgr"
 )
 
 // Public API version constants
@@ -294,7 +295,26 @@ func (s *walletServer) Balance(ctx context.Context, req *pb.BalanceRequest) (
 
 	account := req.AccountNumber
 	reqConfs := req.RequiredConfirmations
-	bals, err := s.wallet.CalculateAccountBalances(account, reqConfs)
+	bal, err := s.wallet.CalculateAccountBalances(account, reqConfs,
+		wtxmgr.BFBalanceFullScan)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	bal0Conf, err := s.wallet.CalculateAccountBalances(account, 0,
+		wtxmgr.BFBalanceFullScan)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	balTotal, err := s.wallet.CalculateAccountBalances(account, reqConfs,
+		wtxmgr.BFBalanceAll)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	balAll, err := s.wallet.CalculateAccountBalances(account, 0,
+		wtxmgr.BFBalanceAll)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -302,9 +322,9 @@ func (s *walletServer) Balance(ctx context.Context, req *pb.BalanceRequest) (
 	// TODO: Spendable currently includes multisig outputs that may not
 	// actually be spendable without additional keys.
 	resp := &pb.BalanceResponse{
-		Total:          int64(bals.Total),
-		Spendable:      int64(bals.Spendable),
-		ImmatureReward: int64(bals.ImmatureReward),
+		Total:          int64(balTotal),
+		Spendable:      int64(bal),
+		ImmatureReward: int64(balAll - bal0Conf),
 	}
 	return resp, nil
 }

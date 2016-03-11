@@ -128,7 +128,7 @@ ticketPurchaseLoop:
 		// amount to the ticket price, thus avoiding more costly db
 		// lookups.
 		eligible, err := w.CreatePurchaseTicket(w.BalanceToMaintain, -1,
-			0, nil)
+			0, nil, waddrmgr.DefaultAccountNum)
 		if err != nil {
 			switch {
 			case err == ErrSStxNotEnoughFunds:
@@ -771,13 +771,13 @@ func (w *Wallet) notifyBalances(curHeight int32, balanceFlag wtxmgr.BehaviorFlag
 	}
 
 	// Notify any potential changes to the balance.
-	confirmed, err := w.TxStore.Balance(1, curHeight, balanceFlag)
+	confirmed, err := w.TxStore.Balance(1, curHeight, balanceFlag, true, 0)
 	if err != nil {
 		log.Errorf("Cannot determine 1-conf balance: %v", err)
 		return
 	}
 	w.notifyConfirmedBalance(confirmed)
-	unconfirmed, err := w.TxStore.Balance(0, curHeight, balanceFlag)
+	unconfirmed, err := w.TxStore.Balance(0, curHeight, balanceFlag, true, 0)
 	if err != nil {
 		log.Errorf("Cannot determine 0-conf balance: %v", err)
 		return
