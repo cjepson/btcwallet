@@ -1602,7 +1602,7 @@ func fetchNextToUseAddrPoolIdx(tx walletdb.Tx, isInternal bool, account uint32) 
 		str := fmt.Sprintf("short read for acct %v, isinternal %v",
 			account, isInternal)
 		err := fmt.Errorf("short read")
-		return 0, managerError(ErrDatabase, str, err)
+		return 0, managerError(ErrMetaPoolIdxNoExist, str, err)
 	}
 
 	return binary.LittleEndian.Uint32(val[0:4]), nil

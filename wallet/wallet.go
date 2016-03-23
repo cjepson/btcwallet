@@ -1181,10 +1181,41 @@ func (w *Wallet) rescanActiveAddresses() error {
 		}
 
 		// Spin up the address pools after the initial sync scans.
+		isInternal := i == waddrmgr.InternalBranch
+		oldIdx, err := w.Manager.NextToUseAddrPoolIndex(isInternal,
+			waddrmgr.DefaultAccountNum)
+		if err != nil {
+			mErr, ok := err.(waddrmgr.ManagerError)
+			unexpectedError := false
+			if !ok {
+				unexpectedError = true
+			} else {
+				// Skip errors where the account's address index
+				// has not been store. For this case, oldIdx will
+				// be the special case 0 which will always be
+				// skipped in the initialization step below.
+				if mErr.ErrorCode != waddrmgr.ErrMetaPoolIdxNoExist {
+					unexpectedError = true
+				}
+			}
+			if unexpectedError {
+				return fmt.Errorf("got unexpected error trying to "+
+					"retrieve last known addr index for acct %v, "+
+					"%s branch: %v", waddrmgr.DefaultAccountNum,
+					branchString, err)
+			}
+		}
+
+		// If the stored index is further along than the sync-to
+		// index determined by the contents of daemon's addrindex,
+		// use it to initialize the address pool instead.
+		if oldIdx > idx {
+			idx = oldIdx
+		}
 		err = pool.initialize(waddrmgr.DefaultAccountNum,
 			i, idx+1, w)
 		if err != nil {
-			log.Errorf("Failed to start the default account %s "+
+			return fmt.Errorf("Failed to start the default account %s "+
 				"branch address pool: %v", branchString, err)
 		}
 
