@@ -53,40 +53,8 @@ func NewAddressPool() *addressPool {
 	}
 }
 
-// getLastAddressIndex retrieves the last known address index for the wallet
-// default account's passed branch. If the address couldn't be found, it is
-// assumed that the wallet is being newly initialized and 0, nil are returned.
-func getLastAddressIndex(w *Wallet, branch uint32) (uint32, error) {
-	var lastIndex uint32
-	var err error
-	var lastAddrFunc func(uint32) (waddrmgr.ManagedAddress, uint32, error)
-	switch branch {
-	case waddrmgr.InternalBranch:
-		lastAddrFunc = w.Manager.LastInternalAddress
-	case waddrmgr.ExternalBranch:
-		lastAddrFunc = w.Manager.LastExternalAddress
-	}
-
-	if lastAddrFunc == nil {
-		return 0, fmt.Errorf("unknown branch for last address index in address " +
-			"pool")
-	}
-
-	_, lastIndex, err = lastAddrFunc(waddrmgr.DefaultAccountNum)
-	if err != nil {
-		if errMgr, ok := err.(waddrmgr.ManagerError); ok {
-			if errMgr.ErrorCode == waddrmgr.ErrAddressNotFound {
-				return 0, nil
-			}
-		}
-		return 0, err
-	}
-
-	return lastIndex, nil
-}
-
-// initialize initializes an address pool for usage by loading the latest
-// unused address from the blockchain itself.
+// initialize initializes an address pool for the passed account and branch
+// to the address index given.
 func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
 	w *Wallet) error {
 	// Do not reinitialize an address pool that was already started.
@@ -98,7 +66,7 @@ func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
 
 	// 0 and 1 refer to the external and internal branches of the wallet.
 	// Other branches are so far unused.
-	if branch > 1 {
+	if branch > waddrmgr.InternalBranch {
 		return fmt.Errorf("unknown branch %v given when attempting to "+
 			"initialize address pool for account %v", branch, account)
 	}
@@ -145,7 +113,7 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 		}
 
 		addrs, err :=
-			nextAddrFunc(waddrmgr.DefaultAccountNum, addressPoolBuffer)
+			nextAddrFunc(a.account, addressPoolBuffer)
 		if err != nil {
 			return nil, err
 		}
