@@ -1174,8 +1174,18 @@ func (w *Wallet) rescanActiveAddresses() error {
 		}
 
 		branchString := "external"
-		if i == 1 {
+		pool := w.externalPool
+		if i == waddrmgr.InternalBranch {
+			pool = w.internalPool
 			branchString = "internal"
+		}
+
+		// Spin up the address pools after the initial sync scans.
+		err = pool.initialize(waddrmgr.DefaultAccountNum,
+			i, idx+1, w)
+		if err != nil {
+			log.Errorf("Failed to start the default account %s "+
+				"branch address pool: %v", branchString, err)
 		}
 
 		if addr == nil && err == nil {
@@ -1215,8 +1225,8 @@ func (w *Wallet) rescanActiveAddresses() error {
 			return err
 		}
 		if exists {
-			log.Debugf("Wallet is already synchronized to address %v"+
-				" of default account %v branch", addr, branchString)
+			log.Debugf("Wallet is already synchronized to address %v (idx %v)"+
+				" of default account %v branch", addr, idx, branchString)
 			continue
 		}
 
@@ -1274,11 +1284,7 @@ func (w *Wallet) rescanActiveAddresses() error {
 // outputs.  This is primarely intended to provide the parameters for a
 // rescan request.
 func (w *Wallet) activeData() ([]dcrutil.Address, []*wire.OutPoint, error) {
-	err := w.rescanActiveAddresses()
-	if err != nil {
-		return nil, nil, err
-	}
-
+	var err error
 	var addrs []dcrutil.Address
 	err = w.Manager.ForEachActiveAddress(func(addr dcrutil.Address) error {
 		addrs = append(addrs, addr)
@@ -1322,6 +1328,13 @@ func (w *Wallet) syncWithChain() error {
 	// Request notifications for transactions sending to all wallet
 	// addresses.
 	addrs, unspent, err := w.activeData()
+	if err != nil {
+		return err
+	}
+
+	// Rescan to the newest used addresses. This also initializes the
+	// address pools.
+	err = w.rescanActiveAddresses()
 	if err != nil {
 		return err
 	}

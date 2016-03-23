@@ -87,7 +87,8 @@ func getLastAddressIndex(w *Wallet, branch uint32) (uint32, error) {
 
 // initialize initializes an address pool for usage by loading the latest
 // unused address from the blockchain itself.
-func (a *addressPool) initialize(account uint32, branch uint32, w *Wallet) error {
+func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
+	w *Wallet) error {
 	// Do not reinitialize an address pool that was already started.
 	// This can happen if the RPC client dies due to a disconnect
 	// from the daemon.
@@ -106,14 +107,7 @@ func (a *addressPool) initialize(account uint32, branch uint32, w *Wallet) error
 	a.wallet = w
 	a.account = account
 	a.branch = branch
-	isInternal := branch == waddrmgr.InternalBranch
-
-	// Retrieve the next to use addresses from wallet closing and storing.
-	var err error
-	a.index, err = w.Manager.NextToUseAddrPoolIndex(isInternal, account)
-	if err != nil {
-		return err
-	}
+	a.index = index
 
 	log.Debugf("Address pool initialized to next addr index %v on pool "+
 		"branch %v", a.index, branch)
