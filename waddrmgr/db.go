@@ -1591,13 +1591,17 @@ func accountNumberToAddrPoolKey(isInternal bool, account uint32) []byte {
 	return k
 }
 
-// fetchNextToUseAddrPoolIdx
-func fetchNextToUseAddrPoolIdx(tx walletdb.Tx, isInternal bool, account uint32) (uint32, error) {
+// fetchNextToUseAddrPoolIdx retrieves an address pool address index for a
+// given account and branch from the meta bucket of the address manager
+// database.
+func fetchNextToUseAddrPoolIdx(tx walletdb.Tx, isInternal bool,
+	account uint32) (uint32, error) {
 	bucket := tx.RootBucket().Bucket(metaBucketName)
 	k := accountNumberToAddrPoolKey(isInternal, account)
 	val := bucket.Get(k)
 
-	// Value should be a uint32.
+	// Value should be a uint32. The serialized format
+	// is simply a little endian slice 4 bytes long.
 	if len(val) < 4 {
 		str := fmt.Sprintf("short read for acct %v, isinternal %v",
 			account, isInternal)
@@ -1608,7 +1612,9 @@ func fetchNextToUseAddrPoolIdx(tx walletdb.Tx, isInternal bool, account uint32) 
 	return binary.LittleEndian.Uint32(val[0:4]), nil
 }
 
-// putNextToUseAddrPoolIdx
+// putNextToUseAddrPoolIdx stores an address pool address index for a
+// given account and branch in the meta bucket of the address manager
+// database.
 func putNextToUseAddrPoolIdx(tx walletdb.Tx, isInternal bool, account uint32, index uint32) error {
 	bucket := tx.RootBucket().Bucket(metaBucketName)
 	k := accountNumberToAddrPoolKey(isInternal, account)

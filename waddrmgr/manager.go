@@ -1164,12 +1164,12 @@ func (m *Manager) ExistsAddress(addressID []byte) (bool, error) {
 	return m.existsAddress(addressID)
 }
 
-// storeNextToUseAddress stores the last used account index for the address
-// pool to the meta bucket of the database. The isInternal flag is used to
-// check if this is an internal or external branch.
+// storeNextToUseAddress is used to store the next to use address index for a
+// given account's internal or external branch to the database.
 //
 // This function MUST be called with the manager lock held for reads.
-func (m *Manager) storeNextToUseAddress(isInternal bool, account uint32, index uint32) error {
+func (m *Manager) storeNextToUseAddress(isInternal bool, account uint32,
+	index uint32) error {
 	err := m.namespace.Update(func(tx walletdb.Tx) error {
 		errLocal := putNextToUseAddrPoolIdx(tx, isInternal, account, index)
 		return errLocal
@@ -1182,20 +1182,22 @@ func (m *Manager) storeNextToUseAddress(isInternal bool, account uint32, index u
 }
 
 // StoreNextToUseAddress is the exported version of storeNextToUseAddress. It
-// is used to store the last used default external and internal addresses to
-// the database upon closing the wallet. This is for addresses in the pool
-// only.
+// is used to store the next to use address index for a given account's internal
+// or external branch to the database.
 //
 // This function is safe for concurrent access.
-func (m *Manager) StoreNextToUseAddress(isInternal bool, account uint32, index uint32) error {
+func (m *Manager) StoreNextToUseAddress(isInternal bool, account uint32,
+	index uint32) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
 	return m.storeNextToUseAddress(isInternal, account, index)
 }
 
-// nextToUseAddrPoolIndex
-func (m *Manager) nextToUseAddrPoolIndex(isInternal bool, account uint32) (uint32, error) {
+// nextToUseAddrPoolIndex returns the next to use address index for a given
+// account's internal or external branch.
+func (m *Manager) nextToUseAddrPoolIndex(isInternal bool,
+	account uint32) (uint32, error) {
 	var index uint32
 	err := m.namespace.View(func(tx walletdb.Tx) error {
 		var errLocal error
@@ -1209,7 +1211,9 @@ func (m *Manager) nextToUseAddrPoolIndex(isInternal bool, account uint32) (uint3
 	return index, nil
 }
 
-// NextToUseAddrPoolIndex
+// NextToUseAddrPoolIndex is the exported version of nextToUseAddrPoolIndex. It
+// returns the next to use address index for a given account's internal or
+// external branch.
 //
 // This function is safe for concurrent access.
 func (m *Manager) NextToUseAddrPoolIndex(isInternal bool, account uint32) (uint32, error) {
