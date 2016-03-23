@@ -54,12 +54,14 @@ func (w *Wallet) handleChainNotifications() {
 		}
 
 		// Spin up the address pools.
-		err = w.internalPool.initialize(waddrmgr.InternalBranch, w)
+		err = w.internalPool.initialize(waddrmgr.DefaultAccountNum,
+			waddrmgr.InternalBranch, w)
 		if err != nil {
 			log.Errorf("Failed to start the default internal branch address "+
 				"pool: %v", err)
 		}
-		err = w.externalPool.initialize(waddrmgr.ExternalBranch, w)
+		err = w.externalPool.initialize(waddrmgr.DefaultAccountNum,
+			waddrmgr.ExternalBranch, w)
 		if err != nil {
 			log.Errorf("Failed to start the default external branch address "+
 				"pool: %v", err)

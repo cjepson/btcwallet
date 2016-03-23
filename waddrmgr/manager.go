@@ -1164,12 +1164,12 @@ func (m *Manager) ExistsAddress(addressID []byte) (bool, error) {
 	return m.existsAddress(addressID)
 }
 
-// storeNextToUseAddresses stores the last used account index for the address
+// storeNextToUseAddress stores the last used account index for the address
 // pool to the meta bucket of the database. The isInternal flag is used to
 // check if this is an internal or external branch.
 //
 // This function MUST be called with the manager lock held for reads.
-func (m *Manager) storeNextToUseAddresses(isInternal bool, account uint32, index uint32) error {
+func (m *Manager) storeNextToUseAddress(isInternal bool, account uint32, index uint32) error {
 	err := m.namespace.Update(func(tx walletdb.Tx) error {
 		errLocal := putNextToUseAddrPoolIdx(tx, isInternal, account, index)
 		return errLocal
@@ -1181,17 +1181,17 @@ func (m *Manager) storeNextToUseAddresses(isInternal bool, account uint32, index
 	return nil
 }
 
-// StoreNextToUseAddresses is the exported version of storeNextToUseAddresses. It
+// StoreNextToUseAddress is the exported version of storeNextToUseAddress. It
 // is used to store the last used default external and internal addresses to
 // the database upon closing the wallet. This is for addresses in the pool
 // only.
 //
 // This function is safe for concurrent access.
-func (m *Manager) StoreNextToUseAddresses(isInternal bool, account uint32, index uint32) error {
+func (m *Manager) StoreNextToUseAddress(isInternal bool, account uint32, index uint32) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	return m.storeNextToUseAddresses(isInternal, account, index)
+	return m.storeNextToUseAddress(isInternal, account, index)
 }
 
 // nextToUseAddrPoolIndex

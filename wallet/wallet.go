@@ -1232,16 +1232,10 @@ func (w *Wallet) rescanActiveAddresses() error {
 
 			// Set the next address in the waddrmgr database so that the
 			// address pool can synchronize properly after.
-			addr, err := w.Manager.GetAddress(idx+1,
-				waddrmgr.DefaultAccountNum, i)
+			err = w.Manager.StoreNextToUseAddress(false,
+				waddrmgr.DefaultAccountNum, idx+1)
 			if err != nil {
-				log.Errorf("Encountered unexpected error when trying to get "+
-					"the next to use address for branch %v, index %v", i,
-					idx+1)
-			}
-			err = w.Manager.StoreNextToUseAddresses(addr, nil)
-			if err != nil {
-				log.Errorf("Failed to store next to use address for external "+
+				log.Errorf("Failed to store next to use pool idx for external "+
 					"pool in the manager on init sync: %v", err.Error())
 			}
 
@@ -1259,14 +1253,8 @@ func (w *Wallet) rescanActiveAddresses() error {
 
 			// Set the next address in the waddrmgr database so that the
 			// address pool can synchronize properly after.
-			addr, err := w.Manager.GetAddress(idx+1,
-				waddrmgr.DefaultAccountNum, i)
-			if err != nil {
-				log.Errorf("Encountered unexpected error when trying to get "+
-					"the next to use address for branch %v, index %v", i,
-					idx+1)
-			}
-			err = w.Manager.StoreNextToUseAddresses(nil, addr)
+			err = w.Manager.StoreNextToUseAddress(false,
+				waddrmgr.DefaultAccountNum, idx+1)
 			if err != nil {
 				log.Errorf("Failed to store next to use address for internal "+
 					"pool in the manager on init sync: %v", err.Error())
