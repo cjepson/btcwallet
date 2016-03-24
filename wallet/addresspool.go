@@ -53,6 +53,33 @@ func NewAddressPool() *addressPool {
 	}
 }
 
+// addressPools is a pair of address pools for the two used branches for a
+// single account.
+type addressPools struct {
+	internal *addressPool
+	external *addressPool
+}
+
+// NewAddressPools creates a pair of address pools as an addressPools struct. It
+// also initializes the address pools to the passed indexes.
+func NewAddressPools(account uint32, intIdx, extIdx uint32,
+	w *Wallet) (*addressPools, error) {
+	a := &addressPools{
+		internal: NewAddressPool(),
+		external: NewAddressPool(),
+	}
+	err := a.internal.initialize(account, waddrmgr.InternalBranch, intIdx, w)
+	if err != nil {
+		return nil, err
+	}
+	err = a.external.initialize(account, waddrmgr.ExternalBranch, intIdx, w)
+	if err != nil {
+		return nil, err
+	}
+
+	return a, nil
+}
+
 // initialize initializes an address pool for the passed account and branch
 // to the address index given.
 func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
@@ -209,25 +236,29 @@ func (a *addressPool) Close() error {
 // the address manager can be used upon startup to restore the cursor position
 // in the address pool.
 func (w *Wallet) CloseAddressPools() {
-	if w.internalPool == nil {
-		return
-	}
-	if w.externalPool == nil {
-		return
-	}
-	if !w.internalPool.started || !w.externalPool.started {
-		return
-	}
+	for _, addressPools := range w.addrPools {
+		if addressPools.internal == nil {
+			return
+		}
+		if addressPools.external == nil {
+			return
+		}
+		if !addressPools.internal.started || !addressPools.external.started {
+			return
+		}
 
-	err := w.internalPool.Close()
-	if err != nil {
-		log.Errorf("failed to close default acct internal addr pool: %v",
-			err)
-	}
-	err = w.externalPool.Close()
-	if err != nil {
-		log.Errorf("failed to close default acct external addr pool: %v",
-			err)
+		err := addressPools.internal.Close()
+		if err != nil {
+			log.Errorf("failed to close default acct internal addr pool: %v",
+				err)
+		}
+		err = addressPools.external.Close()
+		if err != nil {
+			log.Errorf("failed to close default acct external addr pool: %v",
+				err)
+		}
+
+		delete(w.addrPools, addressPools.internal.account)
 	}
 
 	return
@@ -236,11 +267,12 @@ func (w *Wallet) CloseAddressPools() {
 // GetNewAddressExternal is the exported function that gets a new external address
 // for the default account from the external address mempool.
 func (w *Wallet) GetNewAddressExternal() (dcrutil.Address, error) {
-	w.externalPool.mutex.Lock()
-	defer w.externalPool.mutex.Unlock()
-	address, err := w.externalPool.GetNewAddress()
+	defer w.addrPools[waddrmgr.DefaultAccountNum].external.mutex.Lock()
+	defer w.addrPools[waddrmgr.DefaultAccountNum].external.mutex.Unlock()
+	address, err :=
+		w.addrPools[waddrmgr.DefaultAccountNum].external.GetNewAddress()
 	if err == nil {
-		w.externalPool.BatchFinish()
+		w.addrPools[waddrmgr.DefaultAccountNum].external.BatchFinish()
 	}
 	return address, err
 }
@@ -248,11 +280,12 @@ func (w *Wallet) GetNewAddressExternal() (dcrutil.Address, error) {
 // GetNewAddressInternal is the exported function that gets a new internal address
 // for the default account from the internal address mempool.
 func (w *Wallet) GetNewAddressInternal() (dcrutil.Address, error) {
-	w.internalPool.mutex.Lock()
-	defer w.internalPool.mutex.Unlock()
-	address, err := w.internalPool.GetNewAddress()
+	w.addrPools[waddrmgr.DefaultAccountNum].internal.mutex.Lock()
+	defer w.addrPools[waddrmgr.DefaultAccountNum].internal.mutex.Unlock()
+	address, err :=
+		w.addrPools[waddrmgr.DefaultAccountNum].internal.GetNewAddress()
 	if err == nil {
-		w.internalPool.BatchFinish()
+		w.addrPools[waddrmgr.DefaultAccountNum].internal.BatchFinish()
 	}
 	return address, err
 }

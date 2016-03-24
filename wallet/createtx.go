@@ -599,7 +599,7 @@ func (w *Wallet) txToMultisig(account uint32, amount dcrutil.Amount,
 	pubkeys []*dcrutil.AddressSecpPubKey, nRequired int8,
 	minconf int32) (*CreatedTx, dcrutil.Address, []byte, error) {
 	// Initialize the address pool for use.
-	pool := w.internalPool
+	pool := w.addrPools[waddrmgr.DefaultAccountNum].internal
 	pool.mutex.Lock()
 	defer pool.mutex.Unlock()
 	defer func() {
@@ -791,7 +791,7 @@ func (w *Wallet) compressWallet(maxNumIns int, account uint32) (*chainhash.Hash,
 	}
 
 	// Initialize the address pool for use.
-	pool := w.internalPool
+	pool := w.addrPools[waddrmgr.DefaultAccountNum].internal
 	pool.mutex.Lock()
 	defer pool.mutex.Unlock()
 	txSucceeded := false
@@ -907,7 +907,7 @@ func (w *Wallet) compressEligible(eligible []wtxmgr.Credit) error {
 	}
 
 	// Initialize the address pool for use.
-	pool := w.internalPool
+	pool := w.addrPools[waddrmgr.DefaultAccountNum].internal
 	pool.mutex.Lock()
 	defer pool.mutex.Unlock()
 	txSucceeded := false
@@ -1196,7 +1196,7 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	error) {
 
 	// Initialize the address pool for use.
-	pool := w.internalPool
+	pool := w.addrPools[waddrmgr.DefaultAccountNum].internal
 	pool.mutex.Lock()
 	defer pool.mutex.Unlock()
 	txSucceeded := false
