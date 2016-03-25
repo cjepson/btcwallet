@@ -107,8 +107,8 @@ func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
 	a.branch = branch
 	a.index = index
 
-	log.Debugf("Address pool initialized to next addr index %v on pool "+
-		"branch %v", a.index, branch)
+	log.Debugf("Address pool for account %v initialized to next "+
+		"addr index %v on branch %v", account, a.index, branch)
 
 	a.cursor = 0
 	a.started = true
@@ -157,11 +157,11 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 	// converting back.
 	curAddressStr := a.addresses[a.cursor]
 	curAddress, _ := dcrutil.DecodeAddress(curAddressStr, a.wallet.chainParams)
-	a.cursor++
-	a.index++
-
 	log.Debugf("Get new address for branch %v returned %s (idx %v) from "+
 		"the address pool", a.branch, curAddressStr, a.index)
+
+	a.cursor++
+	a.index++
 
 	// Add the address to the notifications watcher.
 	addrs := make([]dcrutil.Address, 1)
@@ -294,16 +294,14 @@ func (w *Wallet) GetNewAddressInternal() (dcrutil.Address, error) {
 // account.
 func (w *Wallet) NewAddress(account uint32) (dcrutil.Address, error) {
 	// Get next address from wallet.
-	addrs, err := w.Manager.NextExternalAddresses(account, 1)
+	addr, err := w.addrPools[account].external.GetNewAddress()
 	if err != nil {
 		return nil, err
 	}
 
 	// Request updates from dcrd for new transactions sent to this address.
-	utilAddrs := make([]dcrutil.Address, len(addrs))
-	for i, addr := range addrs {
-		utilAddrs[i] = addr.Address()
-	}
+	utilAddrs := []dcrutil.Address{addr}
+
 	w.chainClientLock.Lock()
 	chainClient := w.chainClient
 	w.chainClientLock.Unlock()
@@ -322,22 +320,19 @@ func (w *Wallet) NewAddress(account uint32) (dcrutil.Address, error) {
 		w.NtfnServer.notifyAccountProperties(props)
 	}
 
-	return utilAddrs[0], nil
+	return addr, nil
 }
 
 // NewChangeAddress returns a new change address for a wallet.
 func (w *Wallet) NewChangeAddress(account uint32) (dcrutil.Address, error) {
 	// Get next chained change address from wallet for account.
-	addrs, err := w.Manager.NextInternalAddresses(account, 1)
+	addr, err := w.addrPools[account].internal.GetNewAddress()
 	if err != nil {
 		return nil, err
 	}
 
 	// Request updates from dcrd for new transactions sent to this address.
-	utilAddrs := make([]dcrutil.Address, len(addrs))
-	for i, addr := range addrs {
-		utilAddrs[i] = addr.Address()
-	}
+	utilAddrs := []dcrutil.Address{addr}
 
 	chainClient, err := w.requireChainClient()
 	if err == nil {
@@ -354,8 +349,8 @@ func (w *Wallet) NewChangeAddress(account uint32) (dcrutil.Address, error) {
 // branch of the wallet, to cut down on new address usage for wallets.
 // Should be used judiciously.
 func (w *Wallet) ReusedAddress() (dcrutil.Address, error) {
-	addr, err := w.Manager.GetAddress(0, waddrmgr.DefaultAccountNum,
-		waddrmgr.ExternalBranch)
+	addr, err := w.Manager.AddressDerivedFromDbAcct(0,
+		waddrmgr.DefaultAccountNum, waddrmgr.ExternalBranch)
 	if err != nil {
 		return nil, err
 	}

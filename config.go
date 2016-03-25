@@ -245,7 +245,14 @@ func parseAndSetDebugLevels(debugLevel string) error {
 // The above results in dcrwallet functioning properly without any config
 // settings while still allowing the user to override settings with config files
 // and command line options.  Command line options always take precedence.
-func loadConfig() (*config, []string, error) {
+// The bool returned indicates whether or not the wallet was recreated from a
+// seed and needs to perform the initial resync. The []byte is the private
+// passphrase required to do the sync for this special case.
+func loadConfig() (*config, []string, bool, []byte, error) {
+	loadConfigError := func(err error) (*config, []string, bool, []byte, error) {
+		return nil, nil, false, nil, err
+	}
+
 	// Default config.
 	cfg := config{
 		DebugLevel:             defaultLogLevel,
@@ -268,12 +275,14 @@ func loadConfig() (*config, []string, error) {
 		AutomaticRepair:        defaultAutomaticRepair,
 		UnsafeMainNet:          defaultUnsafeMainNet,
 	}
+	walletFromSeed := false
+	passphrase := []byte{}
 
 	// A config file in the current directory takes precedence.
 	exists, err := cfgutil.FileExists(defaultConfigFilename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 	if exists {
 		cfg.ConfigFile = defaultConfigFile
@@ -288,7 +297,7 @@ func loadConfig() (*config, []string, error) {
 		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
 			preParser.WriteHelp(os.Stderr)
 		}
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	// Show the version and exit if the version flag was specified.
@@ -309,7 +318,7 @@ func loadConfig() (*config, []string, error) {
 		if _, ok := err.(*os.PathError); !ok {
 			fmt.Fprintln(os.Stderr, err)
 			parser.WriteHelp(os.Stderr)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 		configFileError = err
 	}
@@ -320,7 +329,7 @@ func loadConfig() (*config, []string, error) {
 		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
 			parser.WriteHelp(os.Stderr)
 		}
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	// Warn about missing config file after the final command line parse
@@ -360,7 +369,7 @@ func loadConfig() (*config, []string, error) {
 		err := fmt.Errorf(str, "loadConfig")
 		fmt.Fprintln(os.Stderr, err)
 		parser.WriteHelp(os.Stderr)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	// Append the network type to the log directory so it is "namespaced"
@@ -383,7 +392,7 @@ func loadConfig() (*config, []string, error) {
 		err := fmt.Errorf("%s: %v", "loadConfig", err.Error())
 		fmt.Fprintln(os.Stderr, err)
 		parser.WriteHelp(os.Stderr)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	// Exit if you try to use a simulation wallet with a standard
@@ -418,13 +427,13 @@ func loadConfig() (*config, []string, error) {
 		err := fmt.Errorf("The flags --create and --createtemp can not " +
 			"be specified together. Use --help for more information.")
 		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	dbFileExists, err := cfgutil.FileExists(dbPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	if cfg.CreateTemp {
@@ -440,14 +449,14 @@ func loadConfig() (*config, []string, error) {
 		// Ensure the data directory for the network exists.
 		if err := checkCreateDir(netDir); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 
 		if !tempWalletExists {
 			// Perform the initial wallet creation wizard.
 			if err := createSimulationWallet(&cfg); err != nil {
 				fmt.Fprintln(os.Stderr, "Unable to create wallet:", err)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 		}
 	} else if cfg.Create {
@@ -457,36 +466,39 @@ func loadConfig() (*config, []string, error) {
 			err := fmt.Errorf("The wallet database file `%v` "+
 				"already exists.", dbPath)
 			fmt.Fprintln(os.Stderr, err)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 
 		// Ensure the data directory for the network exists.
 		if err := checkCreateDir(netDir); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 
 		// Perform the initial wallet creation wizard.
 		if !cfg.CreateWatchingOnly {
-			if err := createWallet(&cfg); err != nil {
+			if walletFromSeed, passphrase, err = createWallet(&cfg); err != nil {
 				fmt.Fprintln(os.Stderr, "Unable to create wallet:", err)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 		} else if cfg.CreateWatchingOnly {
 			if err := createWatchingOnlyWallet(&cfg); err != nil {
 				fmt.Fprintln(os.Stderr, "Unable to create wallet:", err)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 		}
 
-		// Created successfully, so exit now with success.
-		os.Exit(0)
+		// Created successfully, so exit now with success if we don't
+		// need to do the initial sync.
+		if !walletFromSeed {
+			os.Exit(0)
+		}
 	} else if !dbFileExists && !cfg.NoInitialLoad {
 		keystorePath := filepath.Join(netDir, keystore.Filename)
 		keystoreExists, err := cfgutil.FileExists(keystorePath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 		if !keystoreExists {
 			err = fmt.Errorf("The wallet does not exist.  Run with the " +
@@ -496,7 +508,7 @@ func loadConfig() (*config, []string, error) {
 				"--create option to import it.")
 		}
 		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	if len(cfg.TicketAddress) != 0 {
@@ -506,7 +518,7 @@ func loadConfig() (*config, []string, error) {
 			err := fmt.Errorf(str, funcName, cfg.TicketAddress, err)
 			fmt.Fprintln(os.Stderr, err)
 			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 	}
 
@@ -520,7 +532,7 @@ func loadConfig() (*config, []string, error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"Invalid rpcconnect network address: %v\n", err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	localhostListeners := map[string]struct{}{
@@ -530,7 +542,7 @@ func loadConfig() (*config, []string, error) {
 	}
 	RPCHost, _, err := net.SplitHostPort(cfg.RPCConnect)
 	if err != nil {
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 	if cfg.DisableClientTLS {
 		if _, ok := localhostListeners[RPCHost]; !ok {
@@ -540,7 +552,7 @@ func loadConfig() (*config, []string, error) {
 			err := fmt.Errorf(str, funcName, cfg.RPCConnect)
 			fmt.Fprintln(os.Stderr, err)
 			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 	} else {
 		// If CAFile is unset, choose either the copy or local dcrd cert.
@@ -552,7 +564,7 @@ func loadConfig() (*config, []string, error) {
 			certExists, err := cfgutil.FileExists(cfg.CAFile)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 			if !certExists {
 				if _, ok := localhostListeners[RPCHost]; ok {
@@ -560,7 +572,7 @@ func loadConfig() (*config, []string, error) {
 						dcrdHomedirCAFile)
 					if err != nil {
 						fmt.Fprintln(os.Stderr, err)
-						return nil, nil, err
+						return loadConfigError(err)
 					}
 					if dcrdCertExists {
 						cfg.CAFile = dcrdHomedirCAFile
@@ -578,7 +590,7 @@ func loadConfig() (*config, []string, error) {
 	if len(cfg.ExperimentalRPCListeners) == 0 && len(cfg.LegacyRPCListeners) == 0 {
 		addrs, err := net.LookupHost("localhost")
 		if err != nil {
-			return nil, nil, err
+			return loadConfigError(err)
 		}
 		cfg.LegacyRPCListeners = make([]string, 0, len(addrs))
 		for _, addr := range addrs {
@@ -594,14 +606,14 @@ func loadConfig() (*config, []string, error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"Invalid network address in legacy RPC listeners: %v\n", err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 	cfg.ExperimentalRPCListeners, err = cfgutil.NormalizeAddresses(
 		cfg.ExperimentalRPCListeners, activeNet.RPCServerPort)
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"Invalid network address in RPC listeners: %v\n", err)
-		return nil, nil, err
+		return loadConfigError(err)
 	}
 
 	// Both RPC servers may not listen on the same interface/port.
@@ -617,7 +629,7 @@ func loadConfig() (*config, []string, error) {
 					"used as a listener address for both "+
 					"RPC servers", addr)
 				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 		}
 	}
@@ -635,7 +647,7 @@ func loadConfig() (*config, []string, error) {
 				err := fmt.Errorf(str, funcName, addr, err)
 				fmt.Fprintln(os.Stderr, err)
 				fmt.Fprintln(os.Stderr, usageMessage)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 			if _, ok := localhostListeners[host]; !ok {
 				str := "%s: the --noservertls option may not be used " +
@@ -644,7 +656,7 @@ func loadConfig() (*config, []string, error) {
 				err := fmt.Errorf(str, funcName, addr)
 				fmt.Fprintln(os.Stderr, err)
 				fmt.Fprintln(os.Stderr, usageMessage)
-				return nil, nil, err
+				return loadConfigError(err)
 			}
 		}
 	}
@@ -663,5 +675,5 @@ func loadConfig() (*config, []string, error) {
 		cfg.DcrdPassword = cfg.Password
 	}
 
-	return &cfg, remainingArgs, nil
+	return &cfg, remainingArgs, walletFromSeed, passphrase, nil
 }

@@ -47,6 +47,8 @@ type Loader struct {
 	stakeOptions  *StakeOptions
 	autoRepair    bool
 	unsafeMainNet bool
+	initialSync   bool
+	passphrase    []byte
 }
 
 type StakeOptions struct {
@@ -61,12 +63,14 @@ type StakeOptions struct {
 }
 
 // NewLoader constructs a Loader.
-func NewLoader(chainParams *chaincfg.Params, dbDirPath string, stakeOptions *StakeOptions, autoRepair bool, unsafeMainNet bool) *Loader {
+func NewLoader(chainParams *chaincfg.Params, dbDirPath string, stakeOptions *StakeOptions, autoRepair bool, unsafeMainNet bool, initialSync bool, passphrase []byte) *Loader {
 	return &Loader{
 		chainParams:  chainParams,
 		dbDirPath:    dbDirPath,
 		stakeOptions: stakeOptions,
 		autoRepair:   autoRepair,
+		initialSync:  initialSync,
+		passphrase:   passphrase,
 	}
 }
 
@@ -182,12 +186,13 @@ func (l *Loader) CreateNewWallet(pubPassphrase, privPassphrase, seed []byte) (*W
 		txMgrNamespace, stakeMgrNamespace, nil, so.VoteBits,
 		so.StakeMiningEnabled, so.BalanceToMaintain, so.AddressReuse,
 		so.RollbackTest, so.PruneTickets, so.TicketAddress,
-		so.TicketMaxPrice, l.autoRepair)
+		so.TicketMaxPrice, l.autoRepair, l.initialSync, l.passphrase)
 	if err != nil {
 		return nil, err
 	}
 
 	l.onLoaded(w, db)
+	db.Close()
 	return w, nil
 }
 
@@ -200,10 +205,13 @@ func noConsole() ([]byte, error) {
 // OpenExistingWallet opens the wallet from the loader's wallet database path
 // and the public passphrase.  If the loader is being called by a context where
 // standard input prompts may be used during wallet upgrades, setting
-// canConsolePrompt will enables these prompts.
+// canConsolePrompt will enable these prompts.
 func (l *Loader) OpenExistingWallet(pubPassphrase []byte, canConsolePrompt bool) (*Wallet, error) {
 	defer l.mu.Unlock()
 	l.mu.Lock()
+
+	// DEBUG
+	log.Infof("pass 1 OpenExistingWallet")
 
 	if l.wallet != nil {
 		return nil, ErrLoaded
@@ -214,6 +222,9 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte, canConsolePrompt bool)
 		return nil, err
 	}
 
+	// DEBUG
+	log.Infof("pass 2 OpenExistingWallet")
+
 	// Open the database using the boltdb backend.
 	dbPath := filepath.Join(l.dbDirPath, walletDbName)
 	db, err := walletdb.Open("bdb", dbPath)
@@ -221,6 +232,9 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte, canConsolePrompt bool)
 		log.Errorf("Failed to open database: %v", err)
 		return nil, err
 	}
+
+	// DEBUG
+	log.Infof("pass 3 OpenExistingWallet")
 
 	addrMgrNS, err := db.Namespace(waddrmgrNamespaceKey)
 	if err != nil {
@@ -251,10 +265,14 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte, canConsolePrompt bool)
 		stkMgrNS, cbs, so.VoteBits, so.StakeMiningEnabled,
 		so.BalanceToMaintain, so.AddressReuse, so.RollbackTest,
 		so.PruneTickets, so.TicketAddress, so.TicketMaxPrice,
-		l.autoRepair)
+		l.autoRepair, l.initialSync, l.passphrase)
 	if err != nil {
 		return nil, err
 	}
+
+	// DEBUG
+	log.Infof("pass 4 OpenExistingWallet")
+
 	w.Start()
 
 	l.onLoaded(w, db)

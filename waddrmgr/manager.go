@@ -1663,11 +1663,80 @@ func (m *Manager) ChainParams() *chaincfg.Params {
 	return m.chainParams
 }
 
-// GetAddress accesses the internal extended keys to produce an address for
-// some given branch and index. In contrast to the NextAddresses function, this
-// function does NOT add this address to the address manager. It is used for
-// rescanning the actively used addresses in the wallet.
-func (m *Manager) GetAddress(index uint32, account uint32,
+// AddressDerivedFromCointype loads the cointype private key and derives an address for
+// an account even if the account has not yet been created in the address
+// manager database.
+func (m *Manager) AddressDerivedFromCointype(index uint32, account uint32,
+	branch uint32) (dcrutil.Address, error) {
+	// Fetch the cointype key which will be used to derive the next account
+	// extended keys
+	var coinTypePrivEnc []byte
+	err := m.namespace.View(func(tx walletdb.Tx) error {
+		var err error
+		_, coinTypePrivEnc, err = fetchCoinTypeKeys(tx)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Decrypt the cointype key.
+	serializedKeyPriv, err := m.cryptoKeyPriv.Decrypt(coinTypePrivEnc)
+	if err != nil {
+		str := fmt.Sprintf("failed to decrypt cointype serialized private key")
+		return nil, managerError(ErrLocked, str, err)
+	}
+	coinTypeKeyPriv, err :=
+		hdkeychain.NewKeyFromString(string(serializedKeyPriv))
+	zero.Bytes(serializedKeyPriv)
+	if err != nil {
+		str := fmt.Sprintf("failed to create cointype extended private key")
+		return nil, managerError(ErrKeyChain, str, err)
+	}
+
+	// Derive the account key using the cointype key.
+	acctKeyPriv, err := deriveAccountKey(coinTypeKeyPriv, account)
+	coinTypeKeyPriv.Zero()
+	if err != nil {
+		str := "failed to convert private key for account"
+		return nil, managerError(ErrKeyChain, str, err)
+	}
+	acctKey, err := acctKeyPriv.Neuter()
+	if err != nil {
+		str := "failed to convert public key for account"
+		return nil, managerError(ErrKeyChain, str, err)
+	}
+
+	// Derive the appropriate branch key and ensure it is zeroed when done.
+	branchKey, err := acctKey.Child(branch)
+	if err != nil {
+		str := fmt.Sprintf("failed to derive extended key branch %d",
+			branch)
+		return nil, managerError(ErrKeyChain, str, err)
+	}
+	defer branchKey.Zero() // Ensure branch key is zeroed when done.
+
+	key, err := branchKey.Child(index)
+	if err != nil {
+		str := fmt.Sprintf("failed to generate child %d", index)
+		return nil, managerError(ErrKeyChain, str, err)
+	}
+
+	addr, err := key.Address(m.chainParams)
+	if err != nil {
+		str := fmt.Sprintf("failed to generate address %d", key)
+		return nil, managerError(ErrCreateAddress, str, err)
+	}
+
+	return addr, nil
+}
+
+// AddressDerivedFromDbAcct accesses the internal extended keys to produce
+// an address for some given account, branch, and index. In contrast to the
+// NextAddresses function, this function does NOT add this address to the
+// address manager. It is used for rescanning the actively used addresses
+// in the wallet.
+func (m *Manager) AddressDerivedFromDbAcct(index uint32, account uint32,
 	branch uint32) (dcrutil.Address, error) {
 	// Enforce maximum account number.
 	if account > MaxAccountNum {
@@ -2073,6 +2142,13 @@ func (m *Manager) NewAccount(name string) (uint32, error) {
 		}
 		return nil
 	})
+
+	// Create a database entry for the address pool for the account.
+	// The pool will be synced to the zeroeth index for both
+	// branches.
+	m.storeNextToUseAddress(false, account, 0)
+	m.storeNextToUseAddress(true, account, 0)
+
 	return account, err
 }
 

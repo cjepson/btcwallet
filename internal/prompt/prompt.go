@@ -257,23 +257,24 @@ func PublicPass(reader *bufio.Reader, privPass []byte,
 // seed.  When the user answers no, a seed will be generated and displayed to
 // the user along with prompting them for confirmation.  When the user answers
 // yes, a the user is prompted for it.  All prompts are repeated until the user
-// enters a valid response.
-func Seed(reader *bufio.Reader) ([]byte, error) {
+// enters a valid response. The bool returned indicates if the wallet was
+// restored from a given seed or not.
+func Seed(reader *bufio.Reader) ([]byte, bool, error) {
 	// Ascertain the wallet generation seed.
 	useUserSeed, err := promptListBool(reader, "Do you have an "+
 		"existing wallet seed you want to use?", "no")
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !useUserSeed {
 		seed, err := hdkeychain.GenerateSeed(hdkeychain.RecommendedSeedLen)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		seedStr, err := pgpwordlist.ToStringChecksum(seed)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		seedStrSplit := strings.Split(seedStr, " ")
 
@@ -299,7 +300,7 @@ func Seed(reader *bufio.Reader) ([]byte, error) {
 				`and secure location, enter "OK" to continue: `)
 			confirmSeed, err := reader.ReadString('\n')
 			if err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			confirmSeed = strings.TrimSpace(confirmSeed)
 			confirmSeed = strings.Trim(confirmSeed, `"`)
@@ -308,7 +309,7 @@ func Seed(reader *bufio.Reader) ([]byte, error) {
 			}
 		}
 
-		return seed, nil
+		return seed, false, nil
 	}
 
 	for {
@@ -358,7 +359,7 @@ func Seed(reader *bufio.Reader) ([]byte, error) {
 
 		fmt.Printf("\nSeed input successful. \nHex: %x\n", seed)
 
-		return seed, nil
+		return seed, true, nil
 	}
 }
 

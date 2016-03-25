@@ -57,7 +57,7 @@ func walletMain() error {
 	// Load configuration and parse command line.  This function also
 	// initializes logging and configures it accordingly.
 	log.Infof("load the config")
-	tcfg, _, err := loadConfig()
+	tcfg, _, initialSync, passphrase, err := loadConfig()
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,9 @@ func walletMain() error {
 		TicketAddress:      cfg.TicketAddress,
 		TicketMaxPrice:     cfg.TicketMaxPrice,
 	}
-	loader := wallet.NewLoader(activeNet.Params, dbDir, stakeOptions, cfg.AutomaticRepair, cfg.UnsafeMainNet)
+	// DEBUG
+	log.Infof("do load wallet main loop")
+	loader := wallet.NewLoader(activeNet.Params, dbDir, stakeOptions, cfg.AutomaticRepair, cfg.UnsafeMainNet, initialSync, passphrase)
 
 	// Create and start HTTP server to serve wallet client connections.
 	// This will be updated with the wallet and chain server RPC client
@@ -142,6 +144,11 @@ func walletMain() error {
 	})
 
 	if !cfg.NoInitialLoad {
+		// DEBUG
+		log.Infof("do open existing wallet")
+		if initialSync {
+		}
+
 		// Load the wallet database.  It must have been created already
 		// or this will return an appropriate error.
 		_, err = loader.OpenExistingWallet([]byte(cfg.WalletPass), true)
