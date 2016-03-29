@@ -31,6 +31,7 @@ func (w *Wallet) handleChainNotifications() {
 		return
 	}
 
+	syncDoneChan := make(chan bool)
 	sync := func(w *Wallet) {
 		// At the moment there is no recourse if the rescan fails for
 		// some reason, however, the wallet will not be marked synced
@@ -52,6 +53,8 @@ func (w *Wallet) handleChainNotifications() {
 			log.Errorf("Failed to start the default external branch address "+
 				"pool: %v", err)
 		}
+
+		syncDoneChan <- true
 	}
 
 	for n := range chainClient.Notifications() {
@@ -61,6 +64,7 @@ func (w *Wallet) handleChainNotifications() {
 		switch n := n.(type) {
 		case chain.ClientConnected:
 			go sync(w)
+			<-syncDoneChan
 		case chain.BlockConnected:
 			w.connectBlock(wtxmgr.BlockMeta(n))
 		case chain.BlockDisconnected:
