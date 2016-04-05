@@ -361,8 +361,8 @@ func AccountFetchAddresses(icmd interface{}, w *wallet.Wallet) (interface{}, err
 	}
 
 	if cmd.End <= cmd.Start ||
-		cmd.Start > waddrmgr.MaxAddressIndex ||
-		cmd.End > waddrmgr.MaxAddressIndex {
+		cmd.Start > waddrmgr.MaxAddressesPerAccount ||
+		cmd.End > waddrmgr.MaxAddressesPerAccount {
 		return nil, fmt.Errorf("bad indexes start %v, end %v", cmd.Start,
 			cmd.End)
 	}

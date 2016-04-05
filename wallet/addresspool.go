@@ -68,11 +68,11 @@ func newAddressPools(account uint32, intIdx, extIdx uint32,
 		internal: newAddressPool(),
 		external: newAddressPool(),
 	}
-	err := a.internal.initialize(account, waddrmgr.InternalBranch, intIdx, w)
+	err = a.external.initialize(account, waddrmgr.ExternalBranch, extIdx, w)
 	if err != nil {
 		return nil, err
 	}
-	err = a.external.initialize(account, waddrmgr.ExternalBranch, extIdx, w)
+	err := a.internal.initialize(account, waddrmgr.InternalBranch, intIdx, w)
 	if err != nil {
 		return nil, err
 	}
@@ -101,14 +101,52 @@ func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
 			"initialize address pool for account %v", branch, account)
 	}
 
-	a.addresses = make([]string, 0)
+	// Access the manager and get the synced to index, then insert all
+	// the unused addresses into the address pool.
+	lastAddrFunc := w.Manager.LastExternalAddress
+	if branch == waddrmgr.InternalBranch {
+		lastAddrFunc = w.Manager.LastInternalAddress
+	}
+	_, mgrIdx, err := lastAddrFunc(account)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve the last used addr index "+
+			"from the address manager for branch %v, acct %v", branch,
+			account)
+	}
+
+	if mgrIdx < index {
+		return fmt.Errorf("manager is out of sync with the passed index "+
+			"(index %v, mgr index %v)", index, mgrIdx)
+	}
+
+	if mgrIdx == index {
+		a.addresses = make([]string, 0)
+	} else {
+		fetchNum := mgrIdx - index
+		a.addresses = make([]string, fetchNum)
+		for i := uint32(0); i < fetchNum; i++ {
+			addr, err := w.Manager.AddressDerivedFromDbAcct(index+i, account,
+				branch)
+			if err != nil {
+				return fmt.Errorf("failed to get the address at index %v "+
+					"for account %v, branch %v: %s", index+i, account, branch,
+					err.Error())
+			}
+			a.addresses[i] = addr.EncodeAddress()
+			fmt.Printf("addr index %v, %v\n", index+i, addr.EncodeAddress())
+		}
+	}
+
 	a.wallet = w
 	a.account = account
 	a.branch = branch
 	a.index = index
 
 	log.Debugf("Address pool for account %v initialized to next "+
-		"addr index %v on branch %v", account, a.index, branch)
+		"address index %v on branch %v", account, a.index, branch)
+	log.Debugf("The address manager buffered address space is %v "+
+		"many addresses (manager index: %v) for account %v, branch %v",
+		len(a.addresses), mgrIdx, account, branch)
 
 	a.cursor = 0
 	a.started = true
@@ -159,7 +197,12 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 	// As these are all encoded addresses, we should never throw an error
 	// converting back.
 	curAddressStr := a.addresses[a.cursor]
-	curAddress, _ := dcrutil.DecodeAddress(curAddressStr, a.wallet.chainParams)
+	curAddress, err := dcrutil.DecodeAddress(curAddressStr, a.wallet.chainParams)
+	if err != nil {
+		return nil, fmt.Errorf("unexpected error decoding address %s: %s",
+			curAddressStr, err.Error())
+	}
+
 	log.Debugf("Get new address for branch %v returned %s (idx %v) from "+
 		"the address pool", a.branch, curAddressStr, a.index)
 
@@ -180,7 +223,7 @@ func (a *addressPool) GetNewAddress() (dcrutil.Address, error) {
 // GetNewAddress to purge the addresses from the unused map.
 func (a *addressPool) BatchFinish() {
 	log.Debugf("Closing address batch for pool branch %v, next index %v",
-		a.branch, a.index+1)
+		a.branch, a.index)
 
 	isInternal := a.branch == waddrmgr.InternalBranch
 	err := a.wallet.Manager.StoreNextToUseAddress(isInternal, a.account,
@@ -307,11 +350,11 @@ func (w *Wallet) AddressPoolIndex(account uint32, branch uint32) (uint32, error)
 	case waddrmgr.ExternalBranch:
 		w.addrPools[account].external.mutex.Lock()
 		defer w.addrPools[account].external.mutex.Unlock()
-		return w.addrPools[account].external.index + 1, nil
+		return w.addrPools[account].external.index, nil
 	case waddrmgr.InternalBranch:
 		w.addrPools[account].internal.mutex.Lock()
 		defer w.addrPools[account].internal.mutex.Unlock()
-		return w.addrPools[account].internal.index + 1, nil
+		return w.addrPools[account].internal.index, nil
 	}
 
 	return 0, fmt.Errorf("unknown branch number %v", branch)
