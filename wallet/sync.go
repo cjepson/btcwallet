@@ -512,7 +512,19 @@ func (w *Wallet) rescanActiveAddresses() error {
 			if err != nil {
 				return err
 			}
+
+			// If the account is unused, buffer the initial address pool
+			// by syncing the address manager upstream.
 			unusedAcct := (lastAddr == nil)
+			if unusedAcct {
+				_, err := w.Manager.SyncAccountToAddrIndex(acct,
+					addressPoolBuffer, branch)
+				if err != nil {
+					return fmt.Errorf("failed to create initial waddrmgr "+
+						"address buffer for the address pool, "+
+						"account %v, branch %v", acct, branch)
+				}
+			}
 			fmt.Printf("FIND IDX %v\n", idx)
 
 			branchString := "external"

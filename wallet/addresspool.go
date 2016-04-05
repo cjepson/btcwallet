@@ -68,11 +68,11 @@ func newAddressPools(account uint32, intIdx, extIdx uint32,
 		internal: newAddressPool(),
 		external: newAddressPool(),
 	}
-	err = a.external.initialize(account, waddrmgr.ExternalBranch, extIdx, w)
+	err := a.external.initialize(account, waddrmgr.ExternalBranch, extIdx, w)
 	if err != nil {
 		return nil, err
 	}
-	err := a.internal.initialize(account, waddrmgr.InternalBranch, intIdx, w)
+	err = a.internal.initialize(account, waddrmgr.InternalBranch, intIdx, w)
 	if err != nil {
 		return nil, err
 	}
@@ -110,8 +110,8 @@ func (a *addressPool) initialize(account uint32, branch uint32, index uint32,
 	_, mgrIdx, err := lastAddrFunc(account)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve the last used addr index "+
-			"from the address manager for branch %v, acct %v", branch,
-			account)
+			"from the address manager for branch %v, acct %v: %s", branch,
+			account, err.Error())
 	}
 
 	if mgrIdx < index {
