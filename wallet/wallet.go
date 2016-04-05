@@ -287,6 +287,13 @@ func (w *Wallet) SetBalanceToMaintain(balance dcrutil.Amount) {
 	w.stakeSettingsLock.Unlock()
 }
 
+// Generate returns the current status of the generation stake of the wallet.
+func (w *Wallet) Generate() bool {
+	w.stakeSettingsLock.Lock()
+	defer w.stakeSettingsLock.Unlock()
+	return w.StakeMiningEnabled
+}
+
 // SetGenerate is used to enable or disable stake mining in the
 // wallet.
 func (w *Wallet) SetGenerate(flag bool) error {
