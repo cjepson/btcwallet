@@ -594,7 +594,7 @@ func (w *Wallet) rescanActiveAddresses() error {
 
 				// Set the next address in the waddrmgr database so that the
 				// address pool can synchronize properly after.
-				err = w.Manager.StoreNextToUseAddress(false, acct, idx+1)
+				err = w.Manager.StoreNextToUseAddress(false, acct, idx)
 				if err != nil {
 					log.Errorf("Failed to store next to use pool idx for "+
 						"external pool in the manager on init sync: %v",
@@ -615,7 +615,7 @@ func (w *Wallet) rescanActiveAddresses() error {
 
 				// Set the next address in the waddrmgr database so that the
 				// address pool can synchronize properly after.
-				err = w.Manager.StoreNextToUseAddress(false, acct, idx+1)
+				err = w.Manager.StoreNextToUseAddress(true, acct, idx)
 				if err != nil {
 					log.Errorf("Failed to store next to use address for "+
 						"internal pool in the manager on init sync: %v",
