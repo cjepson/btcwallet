@@ -522,7 +522,8 @@ func (w *Wallet) rescanActiveAddresses() error {
 				if err != nil {
 					return fmt.Errorf("failed to create initial waddrmgr "+
 						"address buffer for the address pool, "+
-						"account %v, branch %v", acct, branch)
+						"account %v, branch %v: %s", acct, branch,
+						err.Error())
 				}
 			}
 			fmt.Printf("FIND IDX %v\n", idx)

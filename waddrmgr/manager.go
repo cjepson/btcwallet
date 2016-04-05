@@ -1853,7 +1853,14 @@ func (m *Manager) syncAccountToAddrIndex(account uint32, syncToIndex uint32,
 		branchNum = InternalBranch
 		nextIndex = acctInfo.nextInternalIndex
 	}
-	lastLoadedIndex := nextIndex - 1
+
+	// Special case for the account just being loaded, causing the
+	// account to be unused. In this case, don't subtract because
+	// the wallet will underflow.
+	lastLoadedIndex := uint32(0)
+	if nextIndex > 0 {
+		lastLoadedIndex = nextIndex - 1
+	}
 
 	// Ensure the requested index to sync to doesn't exceed the maximum
 	// allowed for this account.
