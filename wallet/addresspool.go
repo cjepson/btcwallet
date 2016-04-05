@@ -72,7 +72,7 @@ func newAddressPools(account uint32, intIdx, extIdx uint32,
 	if err != nil {
 		return nil, err
 	}
-	err = a.external.initialize(account, waddrmgr.ExternalBranch, intIdx, w)
+	err = a.external.initialize(account, waddrmgr.ExternalBranch, extIdx, w)
 	if err != nil {
 		return nil, err
 	}
@@ -293,6 +293,28 @@ func (w *Wallet) CheckAddressPoolsInitialized(account uint32) error {
 	}
 
 	return nil
+}
+
+// AddressPoolIndex returns the next to use address index for the passed
+// branch of the passed account.
+func (w *Wallet) AddressPoolIndex(account uint32, branch uint32) (uint32, error) {
+	err := w.CheckAddressPoolsInitialized(account)
+	if err != nil {
+		return 0, err
+	}
+
+	switch branch {
+	case waddrmgr.ExternalBranch:
+		w.addrPools[account].external.mutex.Lock()
+		defer w.addrPools[account].external.mutex.Unlock()
+		return w.addrPools[account].external.index + 1, nil
+	case waddrmgr.InternalBranch:
+		w.addrPools[account].internal.mutex.Lock()
+		defer w.addrPools[account].internal.mutex.Unlock()
+		return w.addrPools[account].internal.index + 1, nil
+	}
+
+	return 0, fmt.Errorf("unknown branch number %v", branch)
 }
 
 // GetNewAddressExternal is the exported function that gets a new external address

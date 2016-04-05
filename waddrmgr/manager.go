@@ -31,6 +31,11 @@ const (
 	// addresses.
 	MaxAccountNum = hdkeychain.HardenedKeyStart - 2 // 2^31 - 2
 
+	// MaxAccountNum is the maximum allowed address index.  This value was
+	// chosen to leave the 'signed' range untouched so that it could be
+	// allocated for hardened addresses if need be in the future.
+	MaxAddressIndex = hdkeychain.HardenedKeyStart - 1 // 2^31 - 1
+
 	// MaxAddressesPerAccount is the maximum allowed number of addresses
 	// per account number.  This value is based on the limitation of
 	// the underlying hierarchical deterministic key derivation.
@@ -1764,6 +1769,58 @@ func (m *Manager) AddressDerivedFromDbAcct(index uint32, account uint32,
 	}
 
 	return addr, nil
+}
+
+// AddressesDerivedFromDbAcct accesses the internal extended keys to produce
+// addresses for some given account, branch, start index and end index.
+// In contrast to the NextAddresses function, this function does NOT add
+// these addresses to the address manager.
+func (m *Manager) AddressesDerivedFromDbAcct(start uint32, end uint32,
+	account uint32, branch uint32) ([]dcrutil.Address, error) {
+	// Enforce maximum account number.
+	if account > MaxAccountNum {
+		err := managerError(ErrAccountNumTooHigh, errAcctTooHigh, nil)
+		return nil, err
+	}
+
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+
+	// The next address can only be generated for accounts that have already
+	// been created.
+	acctInfo, err := m.loadAccountInfo(account)
+	if err != nil {
+		return nil, err
+	}
+	acctKey := acctInfo.acctKeyPub
+
+	// Derive the appropriate branch key and ensure it is zeroed when done.
+	branchKey, err := acctKey.Child(branch)
+	if err != nil {
+		str := fmt.Sprintf("failed to derive extended key branch %d",
+			branch)
+		return nil, managerError(ErrKeyChain, str, err)
+	}
+	defer branchKey.Zero() // Ensure branch key is zeroed when done.
+
+	addresses := make([]dcrutil.Address, end-start)
+	for i := start; i < end; i++ {
+		key, err := branchKey.Child(i)
+		if err != nil {
+			str := fmt.Sprintf("failed to generate child %d", i)
+			return nil, managerError(ErrKeyChain, str, err)
+		}
+
+		addr, err := key.Address(m.chainParams)
+		if err != nil {
+			str := fmt.Sprintf("failed to generate address %v", key)
+			return nil, managerError(ErrCreateAddress, str, err)
+		}
+
+		addresses[i] = addr
+	}
+
+	return addresses, nil
 }
 
 // nextAddresses returns the specified number of next chained address from the

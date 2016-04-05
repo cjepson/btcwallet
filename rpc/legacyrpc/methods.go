@@ -90,6 +90,8 @@ var rpcHandlers = map[string]struct {
 	requireUnsafeOnMainNet bool
 }{
 	// Reference implementation wallet methods (implemented)
+	"accountaddressindex":    {handler: AccountAddressIndex},
+	"accountfetchaddresses":  {handler: AccountFetchAddresses},
 	"addmultisigaddress":     {handlerWithChain: AddMultiSigAddress},
 	"consolidate":            {handler: Consolidate},
 	"createmultisig":         {handler: CreateMultiSig},
@@ -153,6 +155,7 @@ var rpcHandlers = map[string]struct {
 	"ticketsforaddress":      {handler: TicketsForAddress},
 	"validateaddress":        {handler: ValidateAddress},
 	"verifymessage":          {handler: VerifyMessage},
+	"walletinfo":             {handlerWithChain: WalletInfo},
 	"walletlock":             {handler: WalletLock},
 	"walletpassphrase":       {handler: WalletPassphrase},
 	"walletpassphrasechange": {handler: WalletPassphraseChange},
@@ -317,6 +320,64 @@ func jsonError(err error) *dcrjson.RPCError {
 		Code:    code,
 		Message: err.Error(),
 	}
+}
+
+// AccountAddressIndex returns the current address index for the passed
+// account and branch.
+func AccountAddressIndex(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
+	cmd := icmd.(*dcrjson.AccountAddressIndexCmd)
+	account, err := w.Manager.LookupAccount(cmd.Account)
+	if err != nil {
+		return nil, err
+	}
+
+	// The branch may only be internal or external.
+	branch := uint32(cmd.Branch)
+	if branch > waddrmgr.InternalBranch {
+		return nil, fmt.Errorf("invalid branch %v", branch)
+	}
+
+	idx, err := w.AddressPoolIndex(account, branch)
+	if err != nil {
+		return nil, err
+	}
+
+	return idx, nil
+}
+
+// AccountFetchAddresses returns the all addresses from (start,end] for the
+// passed account and branch.
+func AccountFetchAddresses(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
+	cmd := icmd.(*dcrjson.AccountFetchAddressesCmd)
+	account, err := w.Manager.LookupAccount(cmd.Account)
+	if err != nil {
+		return nil, err
+	}
+
+	// The branch may only be internal or external.
+	branch := uint32(cmd.Branch)
+	if branch > waddrmgr.InternalBranch {
+		return nil, fmt.Errorf("invalid branch %v", branch)
+	}
+
+	if cmd.End <= cmd.Start ||
+		cmd.Start > waddrmgr.MaxAddressIndex ||
+		cmd.End > waddrmgr.MaxAddressIndex {
+		return nil, fmt.Errorf("bad indexes start %v, end %v", cmd.Start,
+			cmd.End)
+	}
+
+	addrs, err := w.Manager.AddressesDerivedFromDbAcct(uint32(cmd.Start),
+		uint32(cmd.End), account, branch)
+	if err != nil {
+		return nil, err
+	}
+	addrsStr := make([]string, cmd.End-cmd.Start)
+	for i := range addrs {
+		addrsStr[i] = addrs[i].EncodeAddress()
+	}
+
+	return dcrjson.AccountFetchAddressesResult{Addresses: addrsStr}, nil
 }
 
 // makeMultiSigScript is a helper function to combine common logic for
@@ -2740,19 +2801,6 @@ func SendToSStx(icmd interface{}, w *wallet.Wallet, chainClient *chain.RPCClient
 			return nil, err
 		}
 	}
-	// TODO Why is this here? Can we remove it? cj
-	/*
-		var ok bool
-		createdTx.msgtx, ok, err = chainClient.SignRawTransaction(createdTx.msgtx)
-		if err != nil {
-			log.Errorf("Error signing tx: %v", err)
-			return nil, err
-		}
-		if !ok {
-			log.Errorf("Not all inputs have been signed for sstx")
-			return nil, err
-		}
-	*/
 
 	txSha, err := chainClient.SendRawTransaction(createdTx.MsgTx, false)
 	if err != nil {
@@ -3540,6 +3588,37 @@ func VerifyMessage(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 	default:
 		return nil, errors.New("address type not supported")
 	}
+}
+
+// WalletInfo gets the current information about the wallet. If the daemon
+// is connected and fails to ping, the function will still return that the
+// daemon is disconnected.
+func WalletInfo(icmd interface{}, w *wallet.Wallet, chainClient *chain.RPCClient) (interface{}, error) {
+	connected := !(chainClient.Disconnected())
+	if connected {
+		err := chainClient.Ping()
+		if err != nil {
+			log.Warnf("Ping failed on connected daemon client: %s", err.Error())
+			connected = false
+		}
+	}
+
+	unlocked := !(w.Locked())
+	fi := w.RelayFee()
+	tfi := w.TicketFeeIncrement()
+	tmp := w.GetTicketMaxPrice()
+	btm := w.BalanceToMaintain()
+	sm := w.Generate()
+
+	return &dcrjson.WalletInfoResult{
+		DaemonConnected:   connected,
+		Unlocked:          unlocked,
+		TxFee:             fi.ToCoin(),
+		TicketFee:         tfi.ToCoin(),
+		TicketMaxPrice:    tmp.ToCoin(),
+		BalanceToMaintain: btm.ToCoin(),
+		StakeMining:       sm,
+	}, nil
 }
 
 // WalletIsLocked handles the walletislocked extension request by
