@@ -1219,9 +1219,15 @@ func GetBalanceToMaintain(icmd interface{}, w *wallet.Wallet) (interface{}, erro
 func GetMasterPubkey(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 	cmd := icmd.(*dcrjson.GetMasterPubkeyCmd)
 
-	account, err := w.Manager.LookupAccount(cmd.Account)
-	if err != nil {
-		return nil, err
+	// If no account is passed, we provide the extended public key
+	// for the default account number.
+	account := uint32(waddrmgr.DefaultAccountNum)
+	if cmd.Account != nil {
+		var err error
+		account, err = w.Manager.LookupAccount(*cmd.Account)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	pkString, err := w.Manager.GetMasterPubkey(account)
