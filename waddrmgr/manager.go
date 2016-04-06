@@ -495,13 +495,13 @@ func (m *Manager) GetSeed() (string, error) {
 // for the default account of the wallet.
 //
 // This function MUST be called with the manager lock held for writes.
-func (m *Manager) getMasterPubkey() (string, error) {
+func (m *Manager) getMasterPubkey(account uint32) (string, error) {
 	// The account is either invalid or just wasn't cached, so attempt to
 	// load the information from the database.
 	var rowInterface interface{}
 	err := m.namespace.View(func(tx walletdb.Tx) error {
 		var err error
-		rowInterface, err = fetchAccountInfo(tx, DefaultAccountNum)
+		rowInterface, err = fetchAccountInfo(tx, account)
 		return err
 	})
 	if err != nil {
@@ -527,11 +527,11 @@ func (m *Manager) getMasterPubkey() (string, error) {
 }
 
 // GetMasterPubkey is the exported, concurrency safe version of getMasterPubkey.
-func (m *Manager) GetMasterPubkey() (string, error) {
+func (m *Manager) GetMasterPubkey(account uint32) (string, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	return m.getMasterPubkey()
+	return m.getMasterPubkey(account)
 }
 
 // loadAccountInfo attempts to load and cache information about the given

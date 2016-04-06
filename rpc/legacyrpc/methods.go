@@ -1217,7 +1217,14 @@ func GetBalanceToMaintain(icmd interface{}, w *wallet.Wallet) (interface{}, erro
 // GetMasterPubkey handles a getmasterpubkey request by returning the wallet
 // master pubkey encoded as a string.
 func GetMasterPubkey(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
-	pkString, err := w.Manager.GetMasterPubkey()
+	cmd := icmd.(*dcrjson.GetMasterPubkeyCmd)
+
+	account, err := w.Manager.LookupAccount(cmd.Account)
+	if err != nil {
+		return nil, err
+	}
+
+	pkString, err := w.Manager.GetMasterPubkey(account)
 	if err != nil {
 		return nil, err
 	}
