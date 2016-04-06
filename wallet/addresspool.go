@@ -360,6 +360,53 @@ func (w *Wallet) AddressPoolIndex(account uint32, branch uint32) (uint32, error)
 	return 0, fmt.Errorf("unknown branch number %v", branch)
 }
 
+// SyncAddressPoolIndex synchronizes an account's branch to the given address
+// by iteratively calling GetNewAddress on the respective address pool.
+func (w *Wallet) SyncAddressPoolIndex(account uint32, branch uint32,
+	index uint32) error {
+	// Sanity checks.
+	err := w.CheckAddressPoolsInitialized(account)
+	if err != nil {
+		return err
+	}
+	var addrPool *addressPool
+	switch branch {
+	case waddrmgr.ExternalBranch:
+		addrPool = w.addrPools[account].external
+		addrPool.mutex.Lock()
+		defer addrPool.mutex.Unlock()
+	case waddrmgr.InternalBranch:
+		addrPool = w.addrPools[account].internal
+		addrPool.mutex.Lock()
+		defer addrPool.mutex.Unlock()
+	default:
+		return fmt.Errorf("unknown branch number %v", branch)
+	}
+	if index < addrPool.index {
+		return fmt.Errorf("the passed index, %v, is before the "+
+			"currently synced to address index %v", index,
+			addrPool.index)
+	}
+	if index == addrPool.index {
+		return nil
+	}
+
+	// Synchronize our address pool by calling GetNewAddress
+	// iteratively until the next to use index is synced to
+	// where we need it.
+	toFetch := index - addrPool.index
+	for i := uint32(0); i < toFetch; i++ {
+		_, err := addrPool.GetNewAddress()
+		if err != nil {
+			addrPool.BatchRollback()
+			return err
+		}
+	}
+	addrPool.BatchFinish()
+
+	return nil
+}
+
 // GetNewAddressExternal is the exported function that gets a new external address
 // for the default account from the external address mempool.
 func (w *Wallet) GetNewAddressExternal() (dcrutil.Address, error) {

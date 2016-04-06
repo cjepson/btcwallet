@@ -90,75 +90,76 @@ var rpcHandlers = map[string]struct {
 	requireUnsafeOnMainNet bool
 }{
 	// Reference implementation wallet methods (implemented)
-	"accountaddressindex":    {handler: AccountAddressIndex},
-	"accountfetchaddresses":  {handler: AccountFetchAddresses},
-	"addmultisigaddress":     {handlerWithChain: AddMultiSigAddress},
-	"consolidate":            {handler: Consolidate},
-	"createmultisig":         {handler: CreateMultiSig},
-	"dumpprivkey":            {handler: DumpPrivKey, requireUnsafeOnMainNet: true},
-	"getaccount":             {handler: GetAccount},
-	"getaccountaddress":      {handler: GetAccountAddress},
-	"getaddressesbyaccount":  {handler: GetAddressesByAccount},
-	"getbalance":             {handler: GetBalance},
-	"getbestblockhash":       {handler: GetBestBlockHash},
-	"getblockcount":          {handler: GetBlockCount},
-	"getinfo":                {handlerWithChain: GetInfo},
-	"getbalancetomaintain":   {handler: GetBalanceToMaintain},
-	"getgenerate":            {handler: GetGenerate},
-	"getmasterpubkey":        {handler: GetMasterPubkey},
-	"getmultisigoutinfo":     {handlerWithChain: GetMultisigOutInfo},
-	"getnewaddress":          {handler: GetNewAddress},
-	"getrawchangeaddress":    {handler: GetRawChangeAddress},
-	"getreceivedbyaccount":   {handler: GetReceivedByAccount},
-	"getreceivedbyaddress":   {handler: GetReceivedByAddress},
-	"getseed":                {handler: GetSeed, requireUnsafeOnMainNet: true},
-	"getstakeinfo":           {handlerWithChain: GetStakeInfo},
-	"getticketfee":           {handler: GetTicketFee},
-	"getticketmaxprice":      {handler: GetTicketMaxPrice},
-	"gettickets":             {handlerWithChain: GetTickets},
-	"getticketvotebits":      {handler: GetTicketVoteBits},
-	"getticketsvotebits":     {handler: GetTicketsVoteBits},
-	"gettransaction":         {handler: GetTransaction},
-	"getwalletfee":           {handler: GetWalletFee},
-	"help":                   {handler: HelpNoChainRPC, handlerWithChain: HelpWithChainRPC},
-	"importprivkey":          {handler: ImportPrivKey},
-	"importscript":           {handlerWithChain: ImportScript},
-	"keypoolrefill":          {handler: KeypoolRefill},
-	"listaccounts":           {handler: ListAccounts},
-	"listlockunspent":        {handler: ListLockUnspent},
-	"listreceivedbyaccount":  {handler: ListReceivedByAccount},
-	"listreceivedbyaddress":  {handler: ListReceivedByAddress},
-	"listsinceblock":         {handlerWithChain: ListSinceBlock},
-	"listscripts":            {handler: ListScripts},
-	"listtransactions":       {handler: ListTransactions},
-	"listunspent":            {handler: ListUnspent},
-	"lockunspent":            {handler: LockUnspent},
-	"purchaseticket":         {handler: PurchaseTicket},
-	"sendfrom":               {handlerWithChain: SendFrom},
-	"sendmany":               {handler: SendMany},
-	"sendtoaddress":          {handler: SendToAddress},
-	"sendtomultisig":         {handlerWithChain: SendToMultiSig},
-	"sendtosstx":             {handlerWithChain: SendToSStx},
-	"sendtossgen":            {handler: SendToSSGen},
-	"sendtossrtx":            {handlerWithChain: SendToSSRtx},
-	"setgenerate":            {handler: SetGenerate},
-	"setbalancetomaintain":   {handler: SetBalanceToMaintain},
-	"setticketfee":           {handler: SetTicketFee},
-	"setticketmaxprice":      {handler: SetTicketMaxPrice},
-	"setticketvotebits":      {handler: SetTicketVoteBits},
-	"settxfee":               {handler: SetTxFee},
-	"signmessage":            {handler: SignMessage},
-	"signrawtransaction":     {handlerWithChain: SignRawTransaction},
-	"signrawtransactions":    {handlerWithChain: SignRawTransactions},
-	"redeemmultisigout":      {handlerWithChain: RedeemMultiSigOut},
-	"redeemmultisigouts":     {handlerWithChain: RedeemMultiSigOuts},
-	"ticketsforaddress":      {handler: TicketsForAddress},
-	"validateaddress":        {handler: ValidateAddress},
-	"verifymessage":          {handler: VerifyMessage},
-	"walletinfo":             {handlerWithChain: WalletInfo},
-	"walletlock":             {handler: WalletLock},
-	"walletpassphrase":       {handler: WalletPassphrase},
-	"walletpassphrasechange": {handler: WalletPassphraseChange},
+	"accountaddressindex":     {handler: AccountAddressIndex},
+	"accountfetchaddresses":   {handler: AccountFetchAddresses},
+	"accountsyncaddressindex": {handler: AccountSyncAddressIndex},
+	"addmultisigaddress":      {handlerWithChain: AddMultiSigAddress},
+	"consolidate":             {handler: Consolidate},
+	"createmultisig":          {handler: CreateMultiSig},
+	"dumpprivkey":             {handler: DumpPrivKey, requireUnsafeOnMainNet: true},
+	"getaccount":              {handler: GetAccount},
+	"getaccountaddress":       {handler: GetAccountAddress},
+	"getaddressesbyaccount":   {handler: GetAddressesByAccount},
+	"getbalance":              {handler: GetBalance},
+	"getbestblockhash":        {handler: GetBestBlockHash},
+	"getblockcount":           {handler: GetBlockCount},
+	"getinfo":                 {handlerWithChain: GetInfo},
+	"getbalancetomaintain":    {handler: GetBalanceToMaintain},
+	"getgenerate":             {handler: GetGenerate},
+	"getmasterpubkey":         {handler: GetMasterPubkey},
+	"getmultisigoutinfo":      {handlerWithChain: GetMultisigOutInfo},
+	"getnewaddress":           {handler: GetNewAddress},
+	"getrawchangeaddress":     {handler: GetRawChangeAddress},
+	"getreceivedbyaccount":    {handler: GetReceivedByAccount},
+	"getreceivedbyaddress":    {handler: GetReceivedByAddress},
+	"getseed":                 {handler: GetSeed, requireUnsafeOnMainNet: true},
+	"getstakeinfo":            {handlerWithChain: GetStakeInfo},
+	"getticketfee":            {handler: GetTicketFee},
+	"getticketmaxprice":       {handler: GetTicketMaxPrice},
+	"gettickets":              {handlerWithChain: GetTickets},
+	"getticketvotebits":       {handler: GetTicketVoteBits},
+	"getticketsvotebits":      {handler: GetTicketsVoteBits},
+	"gettransaction":          {handler: GetTransaction},
+	"getwalletfee":            {handler: GetWalletFee},
+	"help":                    {handler: HelpNoChainRPC, handlerWithChain: HelpWithChainRPC},
+	"importprivkey":           {handler: ImportPrivKey},
+	"importscript":            {handlerWithChain: ImportScript},
+	"keypoolrefill":           {handler: KeypoolRefill},
+	"listaccounts":            {handler: ListAccounts},
+	"listlockunspent":         {handler: ListLockUnspent},
+	"listreceivedbyaccount":   {handler: ListReceivedByAccount},
+	"listreceivedbyaddress":   {handler: ListReceivedByAddress},
+	"listsinceblock":          {handlerWithChain: ListSinceBlock},
+	"listscripts":             {handler: ListScripts},
+	"listtransactions":        {handler: ListTransactions},
+	"listunspent":             {handler: ListUnspent},
+	"lockunspent":             {handler: LockUnspent},
+	"purchaseticket":          {handler: PurchaseTicket},
+	"sendfrom":                {handlerWithChain: SendFrom},
+	"sendmany":                {handler: SendMany},
+	"sendtoaddress":           {handler: SendToAddress},
+	"sendtomultisig":          {handlerWithChain: SendToMultiSig},
+	"sendtosstx":              {handlerWithChain: SendToSStx},
+	"sendtossgen":             {handler: SendToSSGen},
+	"sendtossrtx":             {handlerWithChain: SendToSSRtx},
+	"setgenerate":             {handler: SetGenerate},
+	"setbalancetomaintain":    {handler: SetBalanceToMaintain},
+	"setticketfee":            {handler: SetTicketFee},
+	"setticketmaxprice":       {handler: SetTicketMaxPrice},
+	"setticketvotebits":       {handler: SetTicketVoteBits},
+	"settxfee":                {handler: SetTxFee},
+	"signmessage":             {handler: SignMessage},
+	"signrawtransaction":      {handlerWithChain: SignRawTransaction},
+	"signrawtransactions":     {handlerWithChain: SignRawTransactions},
+	"redeemmultisigout":       {handlerWithChain: RedeemMultiSigOut},
+	"redeemmultisigouts":      {handlerWithChain: RedeemMultiSigOuts},
+	"ticketsforaddress":       {handler: TicketsForAddress},
+	"validateaddress":         {handler: ValidateAddress},
+	"verifymessage":           {handler: VerifyMessage},
+	"walletinfo":              {handlerWithChain: WalletInfo},
+	"walletlock":              {handler: WalletLock},
+	"walletpassphrase":        {handler: WalletPassphrase},
+	"walletpassphrasechange":  {handler: WalletPassphraseChange},
 
 	// Reference implementation methods (still unimplemented)
 	"backupwallet":         {handler: Unimplemented, noHelp: true},
@@ -378,6 +379,42 @@ func AccountFetchAddresses(icmd interface{}, w *wallet.Wallet) (interface{}, err
 	}
 
 	return dcrjson.AccountFetchAddressesResult{Addresses: addrsStr}, nil
+}
+
+// AccountSyncAddressIndex synchronizes the address manager and local address
+// pool for some account and branch to the passed index. If the current pool
+// index is beyond the passed index, an error is returned. If the passed index
+// is the same as the current pool index, nothing is returned. If the syncing
+// is successful, nothing is returned.
+func AccountSyncAddressIndex(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
+	cmd := icmd.(*dcrjson.AccountSyncAddressIndexCmd)
+	account, err := w.Manager.LookupAccount(cmd.Account)
+	if err != nil {
+		return nil, err
+	}
+
+	// The branch may only be internal or external.
+	branch := uint32(cmd.Branch)
+	if branch > waddrmgr.InternalBranch {
+		return nil, fmt.Errorf("invalid branch %v", branch)
+	}
+
+	// Get the current address pool index for this branch
+	// and do basic sanity checks.
+	index := uint32(cmd.Index)
+	currentIndex, err := w.AddressPoolIndex(account, branch)
+	if err != nil {
+		return nil, err
+	}
+	if index < currentIndex {
+		return nil, fmt.Errorf("the passed index, %v, is before the "+
+			"currently synced to address index %v", index, currentIndex)
+	}
+	if index == currentIndex {
+		return nil, nil
+	}
+
+	return nil, w.SyncAddressPoolIndex(account, branch, index)
 }
 
 // makeMultiSigScript is a helper function to combine common logic for
