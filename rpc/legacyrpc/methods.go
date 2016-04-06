@@ -592,13 +592,41 @@ func GetAddressesByAccount(icmd interface{}, w *wallet.Wallet) (interface{}, err
 		return nil, err
 	}
 
-	var addrStrs []string
-	err = w.Manager.ForEachAccountAddress(account,
-		func(maddr waddrmgr.ManagedAddress) error {
-			addrStrs = append(addrStrs, maddr.Address().EncodeAddress())
-			return nil
-		})
-	return addrStrs, err
+	// Find the current synced-to indexes from the address pool.
+	endExt, err := w.AddressPoolIndex(account, waddrmgr.ExternalBranch)
+	if err != nil {
+		return nil, err
+	}
+	endInt, err := w.AddressPoolIndex(account, waddrmgr.InternalBranch)
+	if err != nil {
+		return nil, err
+	}
+
+	// Nothing to do if we have no addresses.
+	if endExt+endInt == 0 {
+		return nil, nil
+	}
+
+	// Derive the addresses.
+	addrsStr := make([]string, endInt+endExt)
+	addrsExt, err := w.Manager.AddressesDerivedFromDbAcct(0, endExt,
+		account, waddrmgr.ExternalBranch)
+	if err != nil {
+		return nil, err
+	}
+	for i := range addrsExt {
+		addrsStr[i] = addrsExt[i].EncodeAddress()
+	}
+	addrsInt, err := w.Manager.AddressesDerivedFromDbAcct(0, endInt,
+		account, waddrmgr.InternalBranch)
+	if err != nil {
+		return nil, err
+	}
+	for i := range addrsInt {
+		addrsStr[i+int(endExt)] = addrsInt[i].EncodeAddress()
+	}
+
+	return addrsStr, nil
 }
 
 // GetBalance handles a getbalance request by returning the balance for an

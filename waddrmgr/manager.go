@@ -1770,6 +1770,10 @@ func (m *Manager) AddressDerivedFromDbAcct(index uint32, account uint32,
 // addresses for some given account, branch, start index and end index.
 // In contrast to the NextAddresses function, this function does NOT add
 // these addresses to the address manager.
+// TODO There's no reason to continue holding the lock on the waddrmgr while
+// the addresses themselves are being computed from the public account key.
+// Instead the mutex should release as soon as the loadAccountInfo is called,
+// which should free up the address manager to do other things.
 func (m *Manager) AddressesDerivedFromDbAcct(start uint32, end uint32,
 	account uint32, branch uint32) ([]dcrutil.Address, error) {
 	// Enforce maximum account number.
