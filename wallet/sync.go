@@ -533,6 +533,8 @@ func (w *Wallet) rescanActiveAddresses() error {
 				branchString = "internal"
 			}
 
+			// Fetch the address pool index for this account and
+			// branch from the database meta bucket.
 			isInternal := branch == waddrmgr.InternalBranch
 			oldIdx, err := w.Manager.NextToUseAddrPoolIndex(isInternal, acct)
 			unexpectedError := false
@@ -582,64 +584,37 @@ func (w *Wallet) rescanActiveAddresses() error {
 				extIdx = nextToUseIdx
 			}
 
-			if branch == 0 { // External
-				_, err := w.Manager.SyncAccountToAddrIndex(acct, nextToUseIdx,
-					branch)
-				if err != nil {
-					// A ErrSyncToIndex error indicates that we're already
-					// synced to beyond the end of the acoung in the waddrmgr,
-					// so we're good to go.
-					errWaddrmgr, ok := err.(waddrmgr.ManagerError)
-					if !ok || errWaddrmgr.ErrorCode != waddrmgr.ErrSyncToIndex {
-						return fmt.Errorf("couldn't sync external addresses in "+
-							"address manager: %v", err.Error())
-					}
+			// Synchronize the account manager to our address index plus
+			// an extra chunk of addresses that are used as a buffer
+			// in the address pool.
+			_, err = w.Manager.SyncAccountToAddrIndex(acct,
+				nextToUseIdx+addressPoolBuffer, branch)
+			if err != nil {
+				// A ErrSyncToIndex error indicates that we're already
+				// synced to beyond the end of the account in the
+				// waddrmgr.
+				errWaddrmgr, ok := err.(waddrmgr.ManagerError)
+				if !ok || errWaddrmgr.ErrorCode != waddrmgr.ErrSyncToIndex {
+					return fmt.Errorf("couldn't sync %s addresses in "+
+						"address manager: %v", branchString, err.Error())
 				}
-
-				// Set the next address in the waddrmgr database so that the
-				// address pool can synchronize properly after.
-				err = w.Manager.StoreNextToUseAddress(false, acct, nextToUseIdx)
-				if err != nil {
-					log.Errorf("Failed to store next to use pool idx for "+
-						"external pool in the manager on init sync: %v",
-						err.Error())
-				}
-
-				log.Infof("Successfully synchronized the address manager to "+
-					"external address %v (key index %v) for account %v",
-					nextToUseAddr.String(),
-					nextToUseIdx,
-					acct)
 			}
-			if branch == 1 { // Internal
-				_, err := w.Manager.SyncAccountToAddrIndex(acct, nextToUseIdx,
-					branch)
-				if err != nil {
-					// A ErrSyncToIndex error indicates that we're already
-					// synced to beyond the end of the acoung in the waddrmgr,
-					// so we're good to go.
-					errWaddrmgr, ok := err.(waddrmgr.ManagerError)
-					if !ok || errWaddrmgr.ErrorCode != waddrmgr.ErrSyncToIndex {
-						return fmt.Errorf("couldn't sync internal addresses in "+
-							"address manager: %v", err.Error())
-					}
-				}
 
-				// Set the next address in the waddrmgr database so that the
-				// address pool can synchronize properly after.
-				err = w.Manager.StoreNextToUseAddress(true, acct, nextToUseIdx)
-				if err != nil {
-					log.Errorf("Failed to store next to use address for "+
-						"internal pool in the manager on init sync: %v",
-						err.Error())
-				}
-
-				log.Infof("Successfully synchronized the address manager to "+
-					"internal address %v (key index %v) for account %v",
-					nextToUseAddr.String(),
-					nextToUseIdx,
-					acct)
+			// Set the next address in the waddrmgr database so that the
+			// address pool can synchronize properly after.
+			err = w.Manager.StoreNextToUseAddress(isInternal, acct, nextToUseIdx)
+			if err != nil {
+				log.Errorf("Failed to store next to use pool idx for "+
+					"%s pool in the manager on init sync: %v",
+					branchString, err.Error())
 			}
+
+			log.Infof("Successfully synchronized the address manager to "+
+				"%s address %v (key index %v) for account %v",
+				branchString,
+				nextToUseAddr.String(),
+				nextToUseIdx,
+				acct)
 		}
 
 		pool, err := newAddressPools(acct, intIdx, extIdx, w)
