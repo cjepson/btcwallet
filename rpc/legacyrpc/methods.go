@@ -2338,8 +2338,36 @@ func PurchaseTicket(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		ticketAddr = addr
 	}
 
+	numTickets := 1
+	if cmd.NumTickets != nil {
+		if *cmd.NumTickets > 1 {
+			numTickets = *cmd.NumTickets
+		}
+	}
+
+	// Set pool address if specified.
+	var poolAddr dcrutil.Address
+	var poolFee dcrutil.Amount
+	if cmd.PoolAddress != nil {
+		addr, err := decodeAddress(*cmd.PoolAddress, w.ChainParams())
+		if err != nil {
+			return nil, err
+		}
+		poolAddr = addr
+
+		// Attempt to get the amount to send to
+		// the pool after.
+		if cmd.PoolFees == nil {
+			return nil, fmt.Errorf("gave pool address but no pool fee")
+		}
+		poolFee, err = dcrutil.NewAmount(*cmd.PoolFees)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	hash, err := w.CreatePurchaseTicket(0, spendLimit, minConf, ticketAddr,
-		account)
+		account, numTickets, poolAddr, poolFee)
 	if err != nil {
 		if err == wallet.ErrSStxInputOverflow {
 			hash = ""
