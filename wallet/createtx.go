@@ -949,6 +949,9 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 		return nil, err
 	}
 	pool = w.addrPools[req.account].internal
+
+	// Fetch a new address for creating a split transaction. The
+
 	pool.mutex.Lock()
 	defer pool.mutex.Unlock()
 	txSucceeded := false
