@@ -2366,8 +2366,14 @@ func PurchaseTicket(icmd interface{}, w *wallet.Wallet) (interface{}, error) {
 		}
 	}
 
+	// Set the expiry if specified.
+	expiry := int32(0)
+	if cmd.Expiry != nil {
+		expiry = int32(*cmd.Expiry)
+	}
+
 	hash, err := w.CreatePurchaseTicket(0, spendLimit, minConf, ticketAddr,
-		account, numTickets, poolAddr, poolFee)
+		account, numTickets, poolAddr, poolFee, expiry)
 	if err != nil {
 		if err == wallet.ErrSStxInputOverflow {
 			hash = ""

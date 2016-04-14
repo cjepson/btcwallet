@@ -97,7 +97,8 @@ ticketPurchaseLoop:
 		// amount to the ticket price, thus avoiding more costly db
 		// lookups.
 		eligible, err := w.CreatePurchaseTicket(w.BalanceToMaintain(), -1,
-			0, nil, waddrmgr.DefaultAccountNum, 1, w.PoolAddress(), w.PoolFees())
+			0, nil, waddrmgr.DefaultAccountNum, 1, w.PoolAddress(), w.PoolFees(),
+			0)
 		if err != nil {
 			switch {
 			case err == ErrSStxNotEnoughFunds:

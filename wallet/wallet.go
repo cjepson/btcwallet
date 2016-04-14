@@ -857,6 +857,7 @@ type (
 		numTickets  int
 		poolAddress dcrutil.Address
 		poolFees    dcrutil.Amount
+		expiry      int32
 		resp        chan purchaseTicketResponse
 	}
 
@@ -1075,7 +1076,7 @@ func (w *Wallet) CreateSSRtx(ticketHash chainhash.Hash) (*CreatedTx, error) {
 func (w *Wallet) CreatePurchaseTicket(minBalance, spendLimit dcrutil.Amount,
 	minConf int32, ticketAddr dcrutil.Address, account uint32,
 	numTickets int, poolAddress dcrutil.Address,
-	poolFees dcrutil.Amount) (interface{}, error) {
+	poolFees dcrutil.Amount, expiry int32) (interface{}, error) {
 
 	req := purchaseTicketRequest{
 		minBalance:  minBalance,
@@ -1086,6 +1087,7 @@ func (w *Wallet) CreatePurchaseTicket(minBalance, spendLimit dcrutil.Amount,
 		numTickets:  numTickets,
 		poolAddress: poolAddress,
 		poolFees:    poolFees,
+		expiry:      expiry,
 		resp:        make(chan purchaseTicketResponse),
 	}
 	w.purchaseTicketRequests <- req

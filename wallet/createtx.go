@@ -1067,7 +1067,18 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	error) {
 	// Ensure the minimum number of required confirmations is positive.
 	if req.minConf < 0 {
-		return nil, fmt.Errorf("Need positive minconf")
+		return nil, fmt.Errorf("need positive minconf")
+	}
+
+	// Need a positive or zero expiry that is higher than the next block to
+	// generate.
+	if req.expiry < 0 {
+		return nil, fmt.Errorf("need positive expiry")
+	}
+	bs := w.Manager.SyncedTo()
+	if req.expiry <= bs.Height+1 {
+		return nil, fmt.Errorf("need expiry that is beyond next height ("+
+			"given: %v, next height %v)", req.expiry, bs.Height+1)
 	}
 
 	// Initialize the address pool for use.
@@ -1151,7 +1162,7 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 			poolAmt := req.poolFees
 
 			// Pool amount.
-			pkScript, err := txscript.PayToAddrScript(req.poolAddress)
+			pkScript, err := txscript.PayToAddrScript(splitTxAddr)
 			if err != nil {
 				return nil, fmt.Errorf("cannot create txout script: %s", err)
 			}
@@ -1159,7 +1170,7 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 			splitOuts = append(splitOuts, wire.NewTxOut(int64(poolAmt), pkScript))
 
 			// User amount.
-			pkScript, err = txscript.PayToAddrScript(req.poolAddress)
+			pkScript, err = txscript.PayToAddrScript(splitTxAddr)
 			if err != nil {
 				return nil, fmt.Errorf("cannot create txout script: %s", err)
 			}
@@ -1172,6 +1183,15 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	if err != nil {
 		return nil, err
 	}
+
+	// Address manager must be unlocked to compose tickets.  Grab
+	// the unlock if possible (to prevent future unlocks), or return the
+	// error if already locked.
+	heldUnlock, err := w.HoldUnlock()
+	if err != nil {
+		return nil, err
+	}
+	defer heldUnlock.Release()
 
 	// Fire up the address pool for usage in generating tickets.
 	pool.mutex.Lock()
@@ -1204,7 +1224,10 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 	ticketHashes := make([]string, req.numTickets)
 	for i := 0; i < req.numTickets; i++ {
 		// Generate the extended outpoints that we
-		// need to use for ticket inputs.
+		// need to use for ticket inputs. There are
+		// two inputs for pool tickets corresponding
+		// to the fees and the user subsidy, while
+		// user-handled tickets have only one input.
 		var eopPool, eop *extendedOutPoint
 		if req.poolAddress == nil {
 			txOut := splitTx.Tx.TxOut[i]
@@ -1293,6 +1316,9 @@ func (w *Wallet) purchaseTicket(req purchaseTicketRequest) (interface{},
 			false,
 		}
 		forSigning = append(forSigning, eopCredit)
+
+		// Set the expiry.
+		ticket.Expiry = uint32(req.expiry)
 
 		if err = signMsgTx(ticket, forSigning, w.Manager,
 			w.chainParams); err != nil {
