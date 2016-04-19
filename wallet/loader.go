@@ -68,6 +68,7 @@ type StakeOptions struct {
 	TicketMaxPrice     float64
 	PoolAddress        string
 	PoolFees           float64
+	EnableStakePool    string
 }
 
 // NewLoader constructs a Loader.
@@ -201,7 +202,8 @@ func (l *Loader) OpenExistingWallet(pubPassphrase []byte, canConsolePrompt bool)
 	w, err := Open(db, pubPassphrase, cbs, so.VoteBits, so.StakeMiningEnabled,
 		so.BalanceToMaintain, so.AddressReuse, so.RollbackTest,
 		so.PruneTickets, so.TicketAddress, so.TicketMaxPrice, so.PoolAddress,
-		so.PoolFees, l.addrIdxScanLen, l.autoRepair, l.chainParams)
+		so.PoolFees, l.addrIdxScanLen, so.EnableStakePool, l.autoRepair,
+		l.chainParams)
 	if err != nil {
 		return nil, err
 	}

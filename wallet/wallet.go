@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,6 +113,8 @@ type Wallet struct {
 	balanceToMaintain  dcrutil.Amount
 	poolAddress        dcrutil.Address
 	poolFees           dcrutil.Amount
+	stakePoolEnabled   bool
+	stakePoolAddrs     map[string]struct{}
 
 	// Start up flags/settings
 	automaticRepair bool
@@ -182,8 +186,8 @@ type Wallet struct {
 func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 	rollbackTest bool, ticketAddress dcrutil.Address, tmp dcrutil.Amount,
 	poolAddress dcrutil.Address, pf dcrutil.Amount, addrIdxScanLen int,
-	autoRepair bool, mgr *waddrmgr.Manager, txs *wtxmgr.Store,
-	smgr *wstakemgr.StakeStore, db *walletdb.DB,
+	stakePoolAddrs map[string]struct{}, autoRepair bool, mgr *waddrmgr.Manager,
+	txs *wtxmgr.Store, smgr *wstakemgr.StakeStore, db *walletdb.DB,
 	params *chaincfg.Params) *Wallet {
 	var rollbackBlockDB map[uint32]*wtxmgr.DatabaseContents
 	if rollbackTest {
@@ -234,6 +238,8 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		poolAddress:              poolAddress,
 		poolFees:                 pf,
 		addrIdxScanLen:           addrIdxScanLen,
+		stakePoolEnabled:         stakePoolAddrs != nil,
+		stakePoolAddrs:           stakePoolAddrs,
 		automaticRepair:          autoRepair,
 		resyncAccounts:           false,
 		rollbackTesting:          rollbackTest,
@@ -2760,13 +2766,64 @@ func CreateWatchOnly(db walletdb.DB, extendedPubKey string, pubPass []byte, para
 	return nil
 }
 
+// decodeStakePoolAddrs decodes the string of stake pool addresses to search
+// incoming tickets for. The format for the passed string is:
+//   "xpub...:end"
+// where xpub... is the extended public key and end is the last
+// address index to scan to, exclusive. Effectively, it returns the derived
+// addresses for this public key for the address indexes [0,end). The branch
+// used for the derivation is always the external branch.
+func decodeStakePoolAddrs(encStr string,
+	params *chaincfg.Params) (map[string]struct{}, error) {
+
+	// Split the string.
+	splStrs := strings.Split(encStr, ":")
+	if len(splStrs) != 2 {
+		return nil, fmt.Errorf("failed to correctly parse passed stakepool " +
+			"address public key and index")
+	}
+
+	// Parse the extended public key and ensure it's the right network.
+	key, err := hdkeychain.NewKeyFromString(splStrs[0])
+	if err != nil {
+		return nil, err
+	}
+	if !key.IsForNet(params) {
+		return nil, fmt.Errorf("extended public key is for wrong network")
+	}
+
+	// Parse the ending index and ensure it's valid.
+	end, err := strconv.Atoi(splStrs[1])
+	if err != nil {
+		return nil, err
+	}
+	if end < 0 || end > waddrmgr.MaxAddressesPerAccount {
+		return nil, fmt.Errorf("pool address index is invalid (got %v)",
+			end)
+	}
+
+	// Derive the addresses from [0, end) for this extended public key.
+	addrs, err := waddrmgr.AddressesDerivedFromExtPub(0, uint32(end),
+		key, waddrmgr.ExternalBranch, params)
+	if err != nil {
+		return nil, err
+	}
+
+	addrMap := make(map[string]struct{})
+	for i := range addrs {
+		addrMap[addrs[i].EncodeAddress()] = struct{}{}
+	}
+
+	return addrMap, nil
+}
+
 // Open loads an already-created wallet from the passed database and namespaces.
 func Open(db walletdb.DB, pubPass []byte, cbs *waddrmgr.OpenCallbacks,
 	voteBits uint16, stakeMiningEnabled bool, balanceToMaintain float64,
 	addressReuse bool, rollbackTest bool, pruneTickets bool, ticketAddress string,
 	ticketMaxPrice float64, poolAddress string, poolFees float64,
-	addrIdxScanLen int, autoRepair bool, params *chaincfg.Params) (*Wallet,
-	error) {
+	addrIdxScanLen int, enableStakePool string, autoRepair bool,
+	params *chaincfg.Params) (*Wallet, error) {
 	addrMgrNS, err := db.Namespace(waddrmgrNamespaceKey)
 	if err != nil {
 		return nil, err
@@ -2844,6 +2901,11 @@ func Open(db walletdb.DB, pubPass []byte, cbs *waddrmgr.OpenCallbacks,
 		return nil, err
 	}
 
+	stakePoolAddrs, err := decodeStakePoolAddrs(enableStakePool, params)
+	if err != nil {
+		return nil, err
+	}
+
 	log.Infof("Opened wallet") // TODO: log balance? last sync height?
 
 	w := newWallet(voteBits,
@@ -2856,6 +2918,7 @@ func Open(db walletdb.DB, pubPass []byte, cbs *waddrmgr.OpenCallbacks,
 		poolAddr,
 		pf,
 		addrIdxScanLen,
+		stakePoolAddrs,
 		autoRepair,
 		addrMgr,
 		txMgr,

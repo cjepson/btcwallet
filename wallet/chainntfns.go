@@ -370,7 +370,9 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 	tx := dcrutil.NewTx(&rec.MsgTx)
 
 	// Handle incoming SStx; store them in the stake manager if we own
-	// the OP_SSTX tagged out.
+	// the OP_SSTX tagged out, except if we're operating as a stake pool
+	// server. In that case, additionally consider the first commitment
+	// output as well.
 	if is, _ := stake.IsSStx(tx); is {
 		// Errors don't matter here.  If addrs is nil, the range below
 		// does nothing.
@@ -382,8 +384,39 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 		for _, addr := range addrs {
 			_, err := w.Manager.Address(addr)
 			if err == nil {
-				insert = true
-				break
+				// We own the voting output pubkey or script and we're
+				// not operating as a stake pool, so simply insert this
+				// ticket now.
+				if !w.stakePoolEnabled {
+					insert = true
+					break
+				} else {
+					// We are operating as a stake pool. Check the first
+					// commitment output (txOuts[0]) and ensure that the
+					// address found there exists in the list of
+					// approved addresses. Also ensure that the fee
+					// exists and is of the amount requested by the
+					// pool.
+					commitmentOut := tx.MsgTx().TxOut[1]
+					commitAddr, err := stake.AddrFromSStxPkScrCommitment(
+						commitmentOut.PkScript, w.chainParams)
+					if err != nil {
+						log.Debugf("failed to parse commit out addr: %s",
+							err.Error())
+						break
+					}
+					_, exists := w.stakePoolAddrs[commitAddr[0].EncodeAddress()]
+					if exists {
+						commitAmt, err := stake.AmountFromSStxPkScrCommitment(
+							commitmentOut.PkScript)
+						if err != nil {
+							log.Debugf("failed to parse commit out amt: %s",
+								err.Error())
+							break
+						}
+
+					}
+				}
 			}
 		}
 
