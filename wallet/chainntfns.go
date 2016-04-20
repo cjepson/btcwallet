@@ -405,7 +405,7 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 							err.Error())
 						break
 					}
-					_, exists := w.stakePoolAddrs[commitAddr[0].EncodeAddress()]
+					_, exists := w.stakePoolAddrs[commitAddr.EncodeAddress()]
 					if exists {
 						commitAmt, err := stake.AmountFromSStxPkScrCommitment(
 							commitmentOut.PkScript)
@@ -415,6 +415,18 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 							break
 						}
 
+						if commitAmt < w.PoolFees() {
+							log.Warnf("User %s submitted ticket %v has less "+
+								"fees than are required to use this "+
+								"stake pool and is being skipped ("+
+								"required: %v, found %v)",
+								commitAddr.EncodeAddress(), tx.Sha(),
+								w.PoolFees(), commitAmt)
+							break
+						}
+
+						insert = true
+						break
 					}
 				}
 			}
