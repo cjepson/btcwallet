@@ -207,6 +207,8 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 	var ticketFeeIncrement dcrutil.Amount
 	ticketFeeIncrement = TicketFeeIncrement
 
+	fmt.Printf("POOL ADDRESS: %v\n", poolAddress)
+
 	w := &Wallet{
 		db:                       *db,
 		Manager:                  mgr,
@@ -238,7 +240,7 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		poolAddress:              poolAddress,
 		poolFees:                 pf,
 		addrIdxScanLen:           addrIdxScanLen,
-		stakePoolEnabled:         stakePoolAddrs != nil,
+		stakePoolEnabled:         len(stakePoolAddrs) > 0,
 		stakePoolAddrs:           stakePoolAddrs,
 		automaticRepair:          autoRepair,
 		resyncAccounts:           false,
@@ -252,6 +254,7 @@ func newWallet(vb uint16, esm bool, btm dcrutil.Amount, addressReuse bool,
 		chainParams:              params,
 		quit:                     make(chan struct{}),
 	}
+
 	w.NtfnServer = newNotificationServer(w)
 	w.TxStore.NotifyUnspent = func(hash *chainhash.Hash, index uint32) {
 		w.NtfnServer.notifyUnspentOutput(0, hash, index)
@@ -2775,6 +2778,10 @@ func CreateWatchOnly(db walletdb.DB, extendedPubKey string, pubPass []byte, para
 // used for the derivation is always the external branch.
 func decodeStakePoolAddrs(encStr string,
 	params *chaincfg.Params) (map[string]struct{}, error) {
+	// Default option; stake pool is disabled.
+	if encStr == "" {
+		return nil, nil
+	}
 
 	// Split the string.
 	splStrs := strings.Split(encStr, ":")

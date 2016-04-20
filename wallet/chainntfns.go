@@ -401,18 +401,16 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 					commitAddr, err := stake.AddrFromSStxPkScrCommitment(
 						commitmentOut.PkScript, w.chainParams)
 					if err != nil {
-						log.Debugf("failed to parse commit out addr: %s",
+						return fmt.Errorf("failed to parse commit out addr: %s",
 							err.Error())
-						break
 					}
 					_, exists := w.stakePoolAddrs[commitAddr.EncodeAddress()]
 					if exists {
 						commitAmt, err := stake.AmountFromSStxPkScrCommitment(
 							commitmentOut.PkScript)
 						if err != nil {
-							log.Debugf("failed to parse commit out amt: %s",
-								err.Error())
-							break
+							return fmt.Errorf("failed to parse commit "+
+								"out amt: %s", err.Error())
 						}
 
 						if commitAmt < w.PoolFees() {
@@ -422,7 +420,10 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 								"required: %v, found %v)",
 								commitAddr.EncodeAddress(), tx.Sha(),
 								w.PoolFees(), commitAmt)
-							break
+
+							// Reject the entire transaction if it didn't
+							// pay the pool server fees.
+							return nil
 						}
 
 						insert = true
@@ -432,6 +433,7 @@ func (w *Wallet) addRelevantTx(rec *wtxmgr.TxRecord,
 			}
 		}
 
+		fmt.Printf("Do insert ticket %v? %v\n", tx.Sha(), insert)
 		if insert {
 			err := w.StakeMgr.InsertSStx(tx, w.VoteBits)
 			if err != nil {

@@ -40,6 +40,7 @@ const (
 	defaultUnsafeMainNet     = false
 	defaultPromptPass        = false
 	defaultAddrIdxScanLen    = 750
+	defaultEnableStakePool   = ""
 
 	walletDbName = "wallet.db"
 )
@@ -88,7 +89,7 @@ type config struct {
 	PoolAddress       string  `long:"pooladdress" description:"The ticket pool address where ticket fees will go to"`
 	PoolFees          float64 `long:"poolfees" description:"The per-ticket fee mandated by the ticket pool, in coins"`
 	AddrIdxScanLen    int     `long:"addridxscanlen" description:"The width of the scan for last used addresses on wallet restore and start up (default: 750)"`
-	EnableStakePool   string  `long:"enablestakepool" description:"Enables the wallet as a stake pool and takes an extended key in the format of "xpub...:index" to derive cold wallet addresses to send fees to"`
+	EnableStakePool   string  `long:"enablestakepool" description:"Enables the wallet as a stake pool and takes an extended key in the format of \"xpub...:index\" to derive cold wallet addresses to send fees to"`
 
 	// RPC client options
 	RPCConnect       string `short:"c" long:"rpcconnect" description:"Hostname/IP and port of dcrd RPC server to connect to (default localhost:9109, testnet: localhost:19109, simnet: localhost:18556)"`
@@ -266,6 +267,7 @@ func loadConfig() (*config, []string, error) {
 		AutomaticRepair:        defaultAutomaticRepair,
 		UnsafeMainNet:          defaultUnsafeMainNet,
 		AddrIdxScanLen:         defaultAddrIdxScanLen,
+		EnableStakePool:        defaultEnableStakePool,
 	}
 
 	// A config file in the current directory takes precedence.

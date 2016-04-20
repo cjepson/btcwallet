@@ -98,6 +98,8 @@ func walletMain() error {
 		AddressReuse:       cfg.ReuseAddresses,
 		TicketAddress:      cfg.TicketAddress,
 		TicketMaxPrice:     cfg.TicketMaxPrice,
+		PoolAddress:        cfg.PoolAddress,
+		PoolFees:           cfg.PoolFees,
 		EnableStakePool:    cfg.EnableStakePool,
 	}
 	loader := wallet.NewLoader(activeNet.Params, dbDir, stakeOptions,
