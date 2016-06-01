@@ -641,6 +641,24 @@ func (s *StakeStore) getSSGens(sstxHash *chainhash.Hash) ([]*ssgenRecord, error)
 	return records, nil
 }
 
+// SendRawTransaction sends a raw transaction using the chainSvr.
+// TODO Shouldn't this be locked? Eventually import the mutex lock
+// from wallet maybe.
+func (s *StakeStore) SendRawTransaction(msgTx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash,
+	error) {
+	if s.isClosed {
+		str := "stake store is closed"
+		return nil, stakeStoreError(ErrStoreClosed, str, nil)
+	}
+
+	if s.chainSvr != nil {
+		return s.chainSvr.SendRawTransaction(msgTx, allowHighFees)
+	}
+
+	return nil, fmt.Errorf("cannot sendrawtranscation, client not " +
+		"initialized")
+}
+
 // SignVRTransaction signs a vote (SSGen) or revocation (SSRtx)
 // transaction. isSSGen indicates if it is an SSGen; if it's not,
 // it's an SSRtx.
@@ -746,6 +764,8 @@ func (s *StakeStore) SignVRTransaction(msgTx *wire.MsgTx, sstx *dcrutil.Tx,
 // tx hash, and votebits.
 func (s *StakeStore) generateVote(blockHash *chainhash.Hash, height int64,
 	sstxHash *chainhash.Hash, defaultVoteBits uint16, allowHighFees bool) (*StakeNotification, error) {
+	log.Infof("handling generateVote for ticket hash %v", sstxHash)
+
 	// 1. Fetch the SStx, then calculate all the values we'll need later for
 	// the generation of the SSGen tx outputs.
 	sstxRecord, err := s.getSStx(sstxHash)
@@ -754,6 +774,7 @@ func (s *StakeStore) generateVote(blockHash *chainhash.Hash, height int64,
 	}
 	sstx := sstxRecord.tx
 	sstxMsgTx := sstx.MsgTx()
+	log.Infof("generateVote for ticket hash %v: fetched ticket", sstxHash)
 
 	// The legacy wallet didn't store anything about the voteBits to use.
 	// In the case we're loading a legacy wallet and the voteBits are
@@ -861,6 +882,8 @@ func (s *StakeStore) generateVote(blockHash *chainhash.Hash, height int64,
 		return nil, err
 	}
 
+	log.Infof("generateVote for ticket hash %v: signed transaction", sstxHash)
+
 	// Store the information about the SSGen.
 	err = s.insertSSGen(blockHash,
 		height,
@@ -871,11 +894,15 @@ func (s *StakeStore) generateVote(blockHash *chainhash.Hash, height int64,
 		return nil, err
 	}
 
+	log.Infof("generateVote for ticket hash %v: inserted transaction", sstxHash)
+
 	// Send the transaction.
 	ssgenSha, err := s.chainSvr.SendRawTransaction(msgTx, allowHighFees)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Infof("generateVote for ticket hash %v: sent transaction", sstxHash)
 
 	log.Debugf("Generated SSGen %v, voting on block %v at height %v. "+
 		"The ticket used to generate the SSGen was %v.",
@@ -891,6 +918,8 @@ func (s *StakeStore) generateVote(blockHash *chainhash.Hash, height int64,
 		SStxIn:    *sstx.Sha(),
 		VoteBits:  voteBits,
 	}
+
+	log.Infof("generateVote for ticket hash %v: returning", sstxHash)
 
 	return ntfn, nil
 }
@@ -1094,6 +1123,8 @@ func (s StakeStore) HandleWinningTicketsNtfn(blockHash *chainhash.Hash,
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	log.Infof("HandleWinningTicketsNtfn started for height %v", blockHeight)
+
 	// Go through the list of tickets and see any of the
 	// ones we own match those eligible.
 	var ticketsToPull []*chainhash.Hash
@@ -1132,6 +1163,8 @@ func (s StakeStore) HandleWinningTicketsNtfn(blockHash *chainhash.Hash,
 	if errStr != "" {
 		return nil, fmt.Errorf("%v", errStr)
 	}
+
+	log.Infof("HandleWinningTicketsNtfn finished for height %v", blockHeight)
 
 	return ntfns, nil
 }

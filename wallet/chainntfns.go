@@ -920,7 +920,9 @@ func (w *Wallet) handleChainVotingNotifications() {
 
 		switch n := n.(type) {
 		case chain.WinningTickets:
+			log.Infof("begin handling winning tickets")
 			err = w.handleWinningTickets(n.BlockHash, n.BlockHeight, n.Tickets)
+			log.Infof("end handling winning tickets")
 			strErrType = "WinningTickets"
 		case chain.MissedTickets:
 			err = w.handleMissedTickets(n.BlockHash, n.BlockHeight, n.Tickets)
