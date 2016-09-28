@@ -6,6 +6,8 @@
 package wtxmgr
 
 import (
+	"fmt"
+
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrwallet/walletdb"
@@ -31,6 +33,7 @@ func (s *Store) insertMemPoolTx(ns walletdb.ReadWriteBucket, rec *TxRecord) erro
 	}
 
 	for _, input := range rec.MsgTx.TxIn {
+		fmt.Printf("WRITE RAW UNMINED OUTPOINT FOR INPUT %v\n", input.PreviousOutPoint)
 		prevOut := &input.PreviousOutPoint
 		k := canonicalOutPoint(&prevOut.Hash, prevOut.Index)
 		err = putRawUnminedInput(ns, k, rec.Hash[:])

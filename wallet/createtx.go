@@ -1179,6 +1179,7 @@ func (w *Wallet) purchaseTicketsInternal(dbtx walletdb.ReadWriteTx, req purchase
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("MADE SPLIT TX %v\n", splitTx.Tx.TxSha())
 
 	// At this point, addresses have been used in tx in the
 	// mempool, so we need to close the batch after. It might
@@ -1311,6 +1312,7 @@ func (w *Wallet) purchaseTicketsInternal(dbtx walletdb.ReadWriteTx, req purchase
 			return nil, err
 		}
 		txTemp := dcrutil.NewTx(ticket)
+		fmt.Printf("MADE AND INSERT TICKET TX %v\n", txTemp.Sha())
 
 		// The ticket address may be for another wallet. Don't insert the
 		// ticket into the stake manager unless we actually own output zero

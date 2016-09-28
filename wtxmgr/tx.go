@@ -2607,6 +2607,9 @@ func (s *Store) MakeInputSource(ns, addrmgrNs walletdb.ReadBucket, account uint3
 				break
 			}
 			if existsRawUnminedInput(ns, k) != nil {
+				var op wire.OutPoint
+				readCanonicalOutPoint(k, &op)
+				fmt.Printf("EXISTS RAW UNMINED INPUT %v\n", op)
 				// Output is spent by an unmined transaction.
 				// Skip to next unmined credit.
 				continue
@@ -2699,6 +2702,8 @@ func (s *Store) MakeInputSource(ns, addrmgrNs walletdb.ReadBucket, account uint3
 
 			input := wire.NewTxIn(&op, nil)
 
+			fmt.Printf("ADD UNSPENT UNCONF OUTPUT %v VALUE %v\n", op, amt)
+
 			currentTotal += amt
 			currentInputs = append(currentInputs, input)
 			currentScripts = append(currentScripts, pkScript)
@@ -2776,6 +2781,7 @@ func (s *Store) MakeInputSource(ns, addrmgrNs walletdb.ReadBucket, account uint3
 				return 0, nil, nil, err
 			}
 			op.Tree = tree
+			fmt.Printf("ADD UNSPENT 1+ CONF OUTPUT %v VALUE %v\n", op, amt)
 
 			input := wire.NewTxIn(&op, nil)
 

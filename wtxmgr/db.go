@@ -1491,6 +1491,15 @@ func existsRawUnminedCredit(ns walletdb.ReadBucket, k []byte) []byte {
 }
 
 func deleteRawUnminedCredit(ns walletdb.ReadWriteBucket, k []byte) error {
+	var op wire.OutPoint
+	readCanonicalOutPoint(k, &op)
+	v := ns.NestedReadWriteBucket(bucketUnminedCredits).Get(k)
+	if len(v) == 0 {
+		fmt.Printf("YOU'RE DELETING AN UNMINED CREDIT THAT DOESN'T EXIST: %v\n", op)
+	} else {
+		fmt.Printf("UNMINED CREDIT TO DELETE FOUND: %v\n", op)
+	}
+
 	err := ns.NestedReadWriteBucket(bucketUnminedCredits).Delete(k)
 	if err != nil {
 		str := "failed to delete unmined credit"
@@ -1623,6 +1632,15 @@ func existsRawUnminedInput(ns walletdb.ReadBucket, k []byte) (v []byte) {
 }
 
 func deleteRawUnminedInput(ns walletdb.ReadWriteBucket, k []byte) error {
+	var op wire.OutPoint
+	readCanonicalOutPoint(k, &op)
+	v := ns.NestedReadWriteBucket(bucketUnminedInputs).Get(k)
+	if len(v) == 0 {
+		fmt.Printf("YOU'RE DELETING AN UNMINED INPUT THAT DOESN'T EXIST: %v\n", op)
+	} else {
+		fmt.Printf("UNMINED INPUT TO DELETE FOUND: %v\n", op)
+	}
+
 	err := ns.NestedReadWriteBucket(bucketUnminedInputs).Delete(k)
 	if err != nil {
 		str := "failed to delete unmined input"

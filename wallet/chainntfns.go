@@ -49,6 +49,7 @@ func (w *Wallet) handleChainNotifications() {
 			log.Infof("The client has successfully connected to dcrd and " +
 				"is now handling websocket notifications")
 		case chain.BlockConnected:
+			fmt.Printf("HANDLE BLOCK CONNECTED NTFN FOR BLOCK %v %v\n", n.Hash, n.Height)
 			err = walletdb.Update(w.db, func(tx walletdb.ReadWriteTx) error {
 				return w.connectBlock(tx, wtxmgr.BlockMeta(n))
 			})
@@ -61,9 +62,16 @@ func (w *Wallet) handleChainNotifications() {
 		case chain.Reorganization:
 			w.handleReorganizing(n.OldHash, n.OldHeight, n.NewHash, n.NewHeight)
 		case chain.RelevantTx:
+			if n.Block != nil {
+				fmt.Printf("HANDLE TX %v NTFN FOR BLOCK %v %v\n", n.TxRecord.Hash, n.Block.Hash, n.Block.Height)
+			} else {
+				fmt.Printf("HANDLE TX %v NTFN UNCONF\n", n.TxRecord.Hash)
+			}
+			//log.Infof("chain.RelevantTx %v, block %v", n.TxRecord.Hash, n.Block)
 			err = walletdb.Update(w.db, func(tx walletdb.ReadWriteTx) error {
 				return w.addRelevantTx(tx, n.TxRecord, n.Block)
 			})
+			//log.Infof("chain.RelevantTx finished err %v", err)
 			strErrType = "RelevantTx"
 
 		// The following are handled by the wallet's rescan
@@ -127,6 +135,7 @@ func (w *Wallet) handleTicketPurchases(dbtx walletdb.ReadWriteTx) error {
 		return nil
 	}
 
+	fmt.Printf("CALL purchaseTicketsInternal\n")
 	_, err = w.purchaseTicketsInternal(dbtx, purchaseTicketRequest{
 		minBalance:  minBalance,
 		spendLimit:  maxToPay,
@@ -141,6 +150,7 @@ func (w *Wallet) handleTicketPurchases(dbtx walletdb.ReadWriteTx) error {
 		ticketFee:   w.TicketFeeIncrement(),
 		resp:        nil, // not used, error is returned
 	})
+	fmt.Printf("RETURN purchaseTicketsInternal %v\n", err)
 	return err
 }
 
