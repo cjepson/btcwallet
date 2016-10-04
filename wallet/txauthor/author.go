@@ -8,6 +8,7 @@ package txauthor
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainec"
@@ -193,6 +194,13 @@ func AddAllInputScripts(tx *wire.MsgTx, prevPkScripts [][]byte, secrets SecretsS
 			pkScript, txscript.SigHashAll, secrets, secrets,
 			sigScript, chainec.ECTypeSecp256k1)
 		if err != nil {
+			_, addrs, _, err := txscript.ExtractPkScriptAddrs(txscript.DefaultScriptVersion, pkScript, chainParams)
+			if len(addrs) > 0 {
+				fmt.Printf("Try to get address %v (%x %x) but %v\n", addrs[0], addrs[0].ScriptAddress(), addrs[0].Hash160(), err)
+				fmt.Printf("Origin tx %v idx %v\n", inputs[i].PreviousOutPoint.Hash, inputs[i].PreviousOutPoint.Index)
+			} else {
+				fmt.Printf("No addr: %v\n", err)
+			}
 			return err
 		}
 		inputs[i].SignatureScript = script

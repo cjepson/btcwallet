@@ -1129,6 +1129,7 @@ func (w *Wallet) purchaseTicketsInternal(dbtx walletdb.ReadWriteTx, req purchase
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("splitTxAddr %v\n", splitTxAddr)
 
 	// Create the split transaction by using txToOutputs. This varies
 	// based upon whether or not the user is using a stake pool or not.
@@ -1179,6 +1180,7 @@ func (w *Wallet) purchaseTicketsInternal(dbtx walletdb.ReadWriteTx, req purchase
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("splitTxAddr sent OK\n")
 
 	// At this point, addresses have been used in tx in the
 	// mempool, so we need to close the batch after. It might
