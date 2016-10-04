@@ -270,11 +270,11 @@ func (w *Wallet) notifyAccountAddrIdxs(waddrmgrNs walletdb.ReadBucket, account u
 		return err
 	}
 
-	idxExt, err := w.AddressPoolIndex(waddrmgrNs, account, waddrmgr.ExternalBranch)
+	idxExt, err := w.addressPoolIndex(waddrmgrNs, account, waddrmgr.ExternalBranch)
 	if err != nil {
 		return err
 	}
-	idxInt, err := w.AddressPoolIndex(waddrmgrNs, account, waddrmgr.InternalBranch)
+	idxInt, err := w.addressPoolIndex(waddrmgrNs, account, waddrmgr.InternalBranch)
 	if err != nil {
 		return err
 	}
@@ -417,7 +417,20 @@ func (w *Wallet) CheckAddressPoolsInitialized(account uint32) error {
 
 // AddressPoolIndex returns the next to use address index for the passed
 // branch of the passed account.
-func (w *Wallet) AddressPoolIndex(waddrmgrNs walletdb.ReadBucket, account uint32, branch uint32) (uint32, error) {
+func (w *Wallet) AddressPoolIndex(account uint32, branch uint32) (uint32, error) {
+	var index uint32
+	err := walletdb.View(w.db, func(tx walletdb.ReadTx) error {
+		waddrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
+		var err error
+		index, err = w.addressPoolIndex(waddrmgrNs, account, branch)
+		return err
+	})
+	return index, err
+}
+
+// addressPoolIndex returns the next to use address index for the passed
+// branch of the passed account.
+func (w *Wallet) addressPoolIndex(waddrmgrNs walletdb.ReadBucket, account uint32, branch uint32) (uint32, error) {
 	err := w.CheckAddressPoolsInitialized(account)
 	if err != nil {
 		log.Tracef("Error on fetch of address pool account %v, branch %v from "+

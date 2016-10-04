@@ -1451,7 +1451,7 @@ func (w *Wallet) CurrentAddress(account uint32) (dcrutil.Address, error) {
 		addrmgrNs := tx.ReadBucket(waddrmgrNamespaceKey)
 		// Access the address index to get the next to use
 		// address.
-		nextToUseIdx, err := w.AddressPoolIndex(addrmgrNs,
+		nextToUseIdx, err := w.addressPoolIndex(addrmgrNs,
 			account, waddrmgr.ExternalBranch)
 		if err != nil {
 			return err
@@ -1631,13 +1631,13 @@ func (w *Wallet) accountProperties(waddrmgrNs walletdb.ReadBucket, acct uint32) 
 	// buffer. Skip the imported account, which is not a BIP32-like
 	// account.
 	if acct != waddrmgr.ImportedAddrAccount {
-		extIdx, err := w.AddressPoolIndex(waddrmgrNs, acct, waddrmgr.ExternalBranch)
+		extIdx, err := w.addressPoolIndex(waddrmgrNs, acct, waddrmgr.ExternalBranch)
 		if err != nil {
 			return nil, err
 		}
 		props.ExternalKeyCount = extIdx
 
-		intIdx, err := w.AddressPoolIndex(waddrmgrNs, acct, waddrmgr.InternalBranch)
+		intIdx, err := w.addressPoolIndex(waddrmgrNs, acct, waddrmgr.InternalBranch)
 		if err != nil {
 			return nil, err
 		}
